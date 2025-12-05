@@ -44,7 +44,7 @@
 
     <!-- 下方两栏布局 -->
     <div class="bottom-grid">
-      <!-- 最近筛选任务 -->
+      <!-- 最近筛选任务（已完成） -->
       <el-card class="recent-tasks-card" shadow="hover">
         <template #header>
           <div class="card-header">
@@ -58,47 +58,78 @@
           <el-skeleton :rows="3" animated />
         </div>
         <div v-else-if="recentTasks.length === 0" class="empty-container">
-          <el-empty description="暂无筛选任务" :image-size="80" />
+          <el-empty description="暂无已完成的筛选任务" :image-size="80" />
         </div>
         <div v-else class="task-list">
-          <div v-for="task in recentTasks" :key="task.task_id" class="task-item">
+          <div 
+            v-for="task in recentTasks" 
+            :key="task.task_id" 
+            class="task-item"
+            :class="`status-${task.status}`"
+          >
             <div class="task-info">
-              <div class="task-name">任务 #{{ task.task_id?.slice(0, 8) }}</div>
-              <div class="task-time">{{ formatDate(task.created_at) }}</div>
+              <div class="task-name">
+                {{ getTaskName(task) }}
+                <el-tag v-if="getTaskPosition(task)" type="info" size="small" effect="light" class="position-tag">
+                  {{ getTaskPosition(task) }}
+                </el-tag>
+              </div>
+              <div class="task-meta">
+                <el-tag :type="getStatusType(task.status)" size="small">
+                  {{ getStatusText(task.status) }}
+                </el-tag>
+                <span class="task-time">{{ formatDate(task.created_at) }}</span>
+              </div>
+              <!-- 评分显示 -->
+              <div v-if="task.status === 'completed' && getTaskScore(task)" class="task-scores">
+                <el-tag type="success" size="small" effect="plain">
+                  综合: {{ getTaskScore(task)?.comprehensive_score }}
+                </el-tag>
+                <el-tag type="info" size="small" effect="plain">
+                  HR: {{ getTaskScore(task)?.hr_score }}
+                </el-tag>
+                <el-tag type="warning" size="small" effect="plain">
+                  技术: {{ getTaskScore(task)?.technical_score }}
+                </el-tag>
+              </div>
             </div>
-            <el-tag :type="getStatusType(task.status)" size="small">
-              {{ getStatusText(task.status) }}
-            </el-tag>
           </div>
         </div>
       </el-card>
 
-      <!-- 简历组 -->
+      <!-- 岗位简历 -->
       <el-card class="resume-groups-card" shadow="hover">
         <template #header>
           <div class="card-header">
-            <span class="card-title">简历组</span>
-            <router-link to="/screening">
-              <el-button type="primary" link>查看全部</el-button>
+            <span class="card-title">岗位简历</span>
+            <router-link to="/positions">
+              <el-button type="primary" link>管理岗位</el-button>
             </router-link>
           </div>
         </template>
         <div v-if="loading" class="loading-container">
           <el-skeleton :rows="3" animated />
         </div>
-        <div v-else-if="recentGroups.length === 0" class="empty-container">
-          <el-empty description="暂无简历组" :image-size="80" />
+        <div v-else-if="positionResumes.length === 0" class="empty-container">
+          <el-empty description="暂无岗位或简历" :image-size="80" />
         </div>
         <div v-else class="group-list">
-          <div v-for="group in recentGroups" :key="group.id" class="group-item">
+          <div v-for="pos in positionResumes" :key="pos.id" class="group-item">
             <div class="group-info">
-              <div class="group-name">{{ group.group_name }}</div>
+              <div class="group-name">{{ pos.position }}</div>
               <div class="group-meta">
-                {{ group.position_title }} · {{ group.resume_count }} 份简历
+                {{ pos.resume_count || 0 }} 份简历已添加
+              </div>
+              <!-- 显示简历列表预览 -->
+              <div v-if="pos.resumes && pos.resumes.length > 0" class="resume-preview">
+                <span v-for="(resume, idx) in pos.resumes.slice(0, 3)" :key="resume.id" class="resume-name">
+                  {{ resume.candidate_name || '未知' }}{{ idx < Math.min(pos.resumes.length, 3) - 1 ? '、' : '' }}
+                </span>
+                <span v-if="pos.resumes.length > 3" class="more-count">等{{ pos.resumes.length }}人</span>
               </div>
             </div>
-            <el-tag :type="getGroupStatusType(group.status)" size="small">
-              {{ getGroupStatusText(group.status) }}
+            <el-tag type="primary" size="small">
+              {{ pos.resume_count || 0 }} 份
             </el-tag>
           </div>
         </div>
@@ -146,16 +177,16 @@
 import { ref, reactive, onMounted, markRaw } from 'vue'
 import {
   User,
-  Clock,
+  FolderChecked,
   CircleCheck,
-  DataLine,
+  Trophy,
   Briefcase,
   Document,
   VideoCamera,
   ChatDotRound
 } from '@element-plus/icons-vue'
-import { screeningApi, videoApi } from '@/api'
-import type { ResumeScreeningTask, ResumeGroup, VideoAnalysis } from '@/types'
+import { screeningApi, videoApi, positionApi } from '@/api'
+import type { ResumeScreeningTask, PositionData, VideoAnalysis, ScreeningScore } from '@/types'
 
 // 加载状态
 const loading = ref(true)
@@ -163,47 +194,47 @@ const loading = ref(true)
 // 统计数据
 const stats = reactive({
   totalResumes: 0,
-  pendingScreening: 0,
+  screenedResumes: 0,
   completedInterviews: 0,
-  pendingRecommendations: 0
+  recommendedResumes: 0
 })
 
 // 最近数据
 const recentTasks = ref<ResumeScreeningTask[]>([])
-const recentGroups = ref<ResumeGroup[]>([])
+const positionResumes = ref<PositionData[]>([])
 const recentVideos = ref<VideoAnalysis[]>([])
 
 // 统计卡片配置
-const statCards = [
+const statCards = reactive([
   {
     title: '总简历数',
-    value: stats.totalResumes,
+    value: 0,
     icon: markRaw(User),
     color: '#409eff',
     bgColor: '#ecf5ff'
   },
   {
-    title: '待筛选任务',
-    value: stats.pendingScreening,
-    icon: markRaw(Clock),
-    color: '#e6a23c',
-    bgColor: '#fdf6ec'
-  },
-  {
-    title: '已完成面试',
-    value: stats.completedInterviews,
-    icon: markRaw(CircleCheck),
+    title: '已初筛简历',
+    value: 0,
+    icon: markRaw(FolderChecked),
     color: '#67c23a',
     bgColor: '#f0f9eb'
   },
   {
-    title: '待推荐',
-    value: stats.pendingRecommendations,
-    icon: markRaw(DataLine),
-    color: '#909399',
-    bgColor: '#f4f4f5'
+    title: '已完成面试',
+    value: 0,
+    icon: markRaw(CircleCheck),
+    color: '#e6a23c',
+    bgColor: '#fdf6ec'
+  },
+  {
+    title: '已总结推荐',
+    value: 0,
+    icon: markRaw(Trophy),
+    color: '#9b59b6',
+    bgColor: '#f5f0ff'
   }
-]
+])
 
 // 快捷操作配置
 const quickActions = [
@@ -236,8 +267,8 @@ const quickActions = [
     label: '面试辅助',
     desc: '开始面试会话',
     icon: markRaw(ChatDotRound),
-    color: '#909399',
-    bgColor: '#f4f4f5'
+    color: '#9b59b6',
+    bgColor: '#f5f0ff'
   }
 ]
 
@@ -276,65 +307,94 @@ const getStatusText = (status: string) => {
   return texts[status] || status
 }
 
-// 获取简历组状态类型
-const getGroupStatusType = (status: string) => {
-  const types: Record<string, string> = {
-    pending: 'warning',
-    interview_analysis: 'primary',
-    interview_analysis_completed: 'info',
-    comprehensive_screening: 'primary',
-    completed: 'success'
+// 获取任务名称（候选人姓名）
+const getTaskName = (task: ResumeScreeningTask) => {
+  // 优先从 resume_data 获取候选人名
+  if (task.resume_data && task.resume_data.length > 0) {
+    const names = task.resume_data.map(r => r.candidate_name || '未知').slice(0, 2)
+    return names.join('、') + (task.resume_data.length > 2 ? ` 等${task.resume_data.length}人` : '')
   }
-  return types[status] || 'info'
+  // 从 reports 获取
+  if (task.reports && task.reports.length > 0) {
+    const report = task.reports[0]
+    const filename = (report as any).original_filename
+    return filename?.replace(/\.[^.]+$/, '') || `任务 #${task.task_id?.slice(0, 8)}`
+  }
+  return `任务 #${task.task_id?.slice(0, 8)}`
 }
 
-// 获取简历组状态文本
-const getGroupStatusText = (status: string) => {
-  const texts: Record<string, string> = {
-    pending: '待处理',
-    interview_analysis: '面试分析中',
-    interview_analysis_completed: '面试分析完成',
-    comprehensive_screening: '综合筛选中',
-    completed: '已完成'
+// 获取任务岗位
+const getTaskPosition = (task: ResumeScreeningTask): string | null => {
+  if (task.reports && task.reports.length > 0) {
+    const posInfo = task.reports[0]?.position_info
+    if (posInfo?.position) return posInfo.position
   }
-  return texts[status] || status
+  if (task.resume_data && task.resume_data.length > 0) {
+    const rd = task.resume_data[0]
+    if (rd?.position_title) return rd.position_title
+  }
+  return null
+}
+
+// 获取任务评分
+const getTaskScore = (task: ResumeScreeningTask): ScreeningScore | null => {
+  if (task.resume_data && task.resume_data.length > 0) {
+    const rd = task.resume_data[0]
+    if (rd?.scores) return rd.scores
+  }
+  return null
 }
 
 // 加载数据
 const fetchData = async () => {
   loading.value = true
   try {
-    const [tasksResult, groups, videos] = await Promise.all([
-      screeningApi.getTaskHistory({ page: 1, page_size: 10 }).catch(() => ({ tasks: [], total: 0 })),
-      screeningApi.getGroups().catch(() => []),
+    // 获取所有已完成的任务（用于统计总简历数）
+    const [allTasksResult, recentTasksResult, positionsResult, videos] = await Promise.all([
+      screeningApi.getTaskHistory({ status: 'completed', page: 1, page_size: 100 }).catch(() => ({ tasks: [], total: 0 })),
+      screeningApi.getTaskHistory({ status: 'completed', page: 1, page_size: 5 }).catch(() => ({ tasks: [], total: 0 })),
+      positionApi.getPositions({ include_resumes: true }).catch(() => ({ positions: [], total: 0 })),
       videoApi.getVideoList().catch(() => [])
     ])
 
-    const tasks = tasksResult.tasks || []
-    const groupsArr = Array.isArray(groups) ? groups : []
+    const allTasks = allTasksResult.tasks || []
+    const tasks = recentTasksResult.tasks || []
+    const positions = positionsResult.positions || []
     const videosArr = Array.isArray(videos) ? videos : []
     
+    // 显示数据
     recentTasks.value = tasks.slice(0, 5)
-    recentGroups.value = groupsArr.slice(0, 5)
+    positionResumes.value = positions.slice(0, 5)
     recentVideos.value = videosArr.slice(0, 6)
 
     // 计算统计数据
-    stats.totalResumes = groupsArr.reduce((sum: number, g: ResumeGroup) => sum + (g.resume_count || 0), 0)
-    stats.pendingScreening = tasks.filter((t: ResumeScreeningTask) => 
-      t.status === 'pending' || t.status === 'running'
-    ).length
-    stats.completedInterviews = tasks.filter((t: ResumeScreeningTask) => 
-      t.status === 'completed'
-    ).length
-    stats.pendingRecommendations = groupsArr.filter((g: ResumeGroup) => 
-      g.status === 'video_analyzed'
-    ).length
+    // 1. 总简历数：从已完成任务中统计 resume_data 数量（每个任务可能有多个简历）
+    let totalResumeCount = 0
+    for (const task of allTasks) {
+      if (task.resume_data && Array.isArray(task.resume_data)) {
+        totalResumeCount += task.resume_data.length
+      } else {
+        // 如果没有 resume_data，至少算1个
+        totalResumeCount += 1
+      }
+    }
+    stats.totalResumes = totalResumeCount
+
+    // 2. 已初筛简历：所有岗位分配的简历总数
+    stats.screenedResumes = positions.reduce((sum: number, p: PositionData) => sum + (p.resume_count || 0), 0)
+
+    // 3. 已完成面试：已完成视频分析的数量
+    stats.completedInterviews = videosArr.filter((v: VideoAnalysis) => v.status === 'completed').length
+
+    // 4. 已总结推荐：暂时设为0（需要后端提供最终推荐完成的统计接口）
+    // TODO: 对接最终推荐完成统计 API
+    stats.recommendedResumes = 0
 
     // 更新统计卡片
-    statCards[0].value = stats.totalResumes
-    statCards[1].value = stats.pendingScreening
-    statCards[2].value = stats.completedInterviews
-    statCards[3].value = stats.pendingRecommendations
+    if (statCards[0]) statCards[0].value = stats.totalResumes
+    if (statCards[1]) statCards[1].value = stats.screenedResumes
+    if (statCards[2]) statCards[2].value = stats.completedInterviews
+    if (statCards[3]) statCards[3].value = stats.recommendedResumes
   } catch (error) {
     console.error('加载仪表盘数据失败:', error)
   } finally {
@@ -487,32 +547,87 @@ onMounted(() => {
 .task-item,
 .group-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   padding: 12px 16px;
   background-color: #fafafa;
   border-radius: 8px;
   transition: background-color 0.2s;
+  border-left: 3px solid transparent;
 
   &:hover {
     background-color: #f0f0f0;
+  }
+
+  &.status-completed {
+    border-left-color: #67c23a;
+  }
+
+  &.status-running {
+    border-left-color: #409eff;
+  }
+
+  &.status-failed {
+    border-left-color: #f56c6c;
   }
 }
 
 .task-info,
 .group-info {
+  flex: 1;
+  min-width: 0;
+  
   .task-name,
   .group-name {
     font-size: 14px;
     font-weight: 500;
     color: #303133;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .task-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
   }
 
   .task-time,
   .group-meta {
     font-size: 12px;
     color: #909399;
+  }
+
+  .position-tag {
+    font-size: 11px;
+  }
+
+  .task-scores {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    
+    .el-tag {
+      font-size: 11px;
+    }
+  }
+
+  .resume-preview {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #606266;
+    
+    .resume-name {
+      color: #409eff;
+    }
+    
+    .more-count {
+      color: #909399;
+    }
   }
 }
 

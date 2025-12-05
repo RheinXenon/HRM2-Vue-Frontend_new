@@ -216,6 +216,16 @@ export const screeningApi = {
     }
   },
 
+  // 获取简历数据统计（总数）
+  getResumeDataStats: async (): Promise<{ total: number }> => {
+    const response = await fetch(`${API_BASE}/resume-screening/resume-data/?page=1&page_size=1`)
+    if (!response.ok) {
+      throw new Error(`获取简历统计失败: ${response.status}`)
+    }
+    const result = await response.json()
+    return { total: result.total || 0 }
+  },
+
   // 获取简历详情
   getResumeDetail: async (resumeId: string): Promise<ResumeData | null> => {
     try {

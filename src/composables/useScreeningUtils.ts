@@ -87,15 +87,26 @@ export function useScreeningUtils() {
     return texts[status] || status
   }
 
-  // 获取发言人文本
+  // Agent顺序定义（用于进度显示）
+  const AGENT_ORDER = ['User_Proxy', 'Assistant', 'HR_Expert', 'Technical_Expert', 'Project_Manager_Expert', 'Critic']
+  const TOTAL_AGENTS = AGENT_ORDER.length
+  
+  // 获取发言人文本（包含步骤信息）
   const getSpeakerText = (speaker: string) => {
-    const map: Record<string, string> = {
-      'HR_Expert': 'HR评分中...',
-      'Technical_Expert': '技术评分中...',
-      'Project_Manager_Expert': '管理评分中...',
-      'Critic': '生成报告中...'
+    const speakerNames: Record<string, string> = {
+      'User_Proxy': '初始化',
+      'Assistant': '协调准备',
+      'HR_Expert': 'HR评分中',
+      'Technical_Expert': '技术评分中',
+      'Project_Manager_Expert': '管理评分中',
+      'Critic': '综合评审中'
     }
-    return map[speaker] || speaker
+    
+    const stepIndex = AGENT_ORDER.indexOf(speaker)
+    const stepNum = stepIndex >= 0 ? stepIndex + 1 : '?'
+    const displayName = speakerNames[speaker] || speaker
+    
+    return `${displayName} (${stepNum}/${TOTAL_AGENTS})`
   }
 
   // 获取处理任务的评分

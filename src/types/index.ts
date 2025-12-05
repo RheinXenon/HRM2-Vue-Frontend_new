@@ -79,7 +79,15 @@ export interface ReportInfo {
 }
 
 export interface ResumeDataScore {
+  id?: string
+  candidate_name?: string
+  position_title?: string
   scores?: ScreeningScore
+  summary?: string
+  json_content?: string
+  resume_content?: string
+  report_md_url?: string
+  report_json_url?: string
 }
 
 export type ResumeGroupStatus =

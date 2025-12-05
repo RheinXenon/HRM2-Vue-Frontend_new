@@ -223,35 +223,48 @@ const submitFiles = async () => {
   }
 
   isSubmitting.value = true
+  let successCount = 0
+  
   try {
-    const uploadData = {
-      position: positionData.value,
-      resumes: parsedFiles.map(file => ({
-        name: file.name,
-        content: file.content || '',
-        metadata: {
-          size: file.file.size,
-          type: file.file.type || 'text/plain'
+    // 为每份简历单独发送请求，获取独立的task_id
+    for (const file of parsedFiles) {
+      try {
+        const uploadData = {
+          position: positionData.value,
+          resumes: [{
+            name: file.name,
+            content: file.content || '',
+            metadata: {
+              size: file.file.size,
+              type: file.file.type || 'text/plain'
+            }
+          }]
         }
-      }))
+
+        const result = await screeningApi.submitScreening(uploadData)
+        
+        // 每份简历有独立的task_id
+        processingQueue.value.unshift({
+          name: file.name,
+          task_id: result.task_id,
+          status: 'pending',
+          progress: 0,
+          created_at: new Date().toISOString(),
+          applied_position: positionData.value.position
+        })
+        
+        successCount++
+      } catch (err) {
+        console.error(`提交 ${file.name} 失败:`, err)
+        ElMessage.error(`${file.name} 提交失败`)
+      }
     }
 
-    const result = await screeningApi.submitScreening(uploadData)
-
-    parsedFiles.forEach(file => {
-      processingQueue.value.unshift({
-        name: file.name,
-        task_id: result.task_id,
-        status: 'pending',
-        progress: 0,
-        created_at: new Date().toISOString(),
-        applied_position: positionData.value.position
-      })
-    })
-
-    resumeUploadRef.value?.clearAll()
-    ElMessage.success(`成功提交 ${parsedFiles.length} 份简历进行初筛`)
-    startTaskPolling()
+    if (successCount > 0) {
+      resumeUploadRef.value?.clearAll()
+      ElMessage.success(`成功提交 ${successCount} 份简历进行初筛`)
+      startTaskPolling()
+    }
   } catch (err) {
     console.error('提交失败:', err)
     ElMessage.error('提交失败')
@@ -357,22 +370,30 @@ const showResumeDetail = (resume: ResumeData) => {
 }
 
 const showQueueItemDetail = async (item: ProcessingTask) => {
+  // 优先从 resume_data 获取数据（包含完整的筛选结果）
+  const resumeDataItem = item.resume_data?.[0]
+  
   const resumeData: ResumeData = {
-    id: item.report_id || item.task_id || '',
-    candidate_name: item.name,
-    position_title: item.applied_position || '',
-    screening_score: item.resume_data?.[0]?.scores,
-    resume_content: item.reports?.[0]?.resume_content,
+    id: resumeDataItem?.id || item.report_id || item.task_id || '',
+    candidate_name: resumeDataItem?.candidate_name || item.name,
+    position_title: resumeDataItem?.position_title || item.applied_position || '',
+    screening_score: resumeDataItem?.scores,
+    screening_summary: resumeDataItem?.summary,
+    resume_content: resumeDataItem?.resume_content || item.reports?.[0]?.resume_content,
     created_at: item.created_at
   }
   
-  if (item.report_id && item.status === 'completed') {
+  // 如果本地数据不完整，尝试从API获取详情
+  // 使用 resume_data 的 id（而不是 report_id）
+  const detailId = resumeDataItem?.id || item.report_id
+  if (detailId && item.status === 'completed' && !resumeData.screening_summary) {
     try {
-      const detail = await screeningApi.getResumeDetail(item.report_id)
+      const detail = await screeningApi.getResumeDetail(detailId)
       if (detail) {
         resumeData.resume_content = detail.resume_content || resumeData.resume_content
-        resumeData.screening_summary = detail.screening_summary
+        resumeData.screening_summary = detail.screening_summary || resumeData.screening_summary
         resumeData.screening_score = detail.screening_score || resumeData.screening_score
+        resumeData.candidate_name = detail.candidate_name || resumeData.candidate_name
       }
     } catch (err) {
       console.warn('获取简历详情失败:', err)

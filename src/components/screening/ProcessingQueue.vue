@@ -37,14 +37,16 @@
           <div class="queue-time">{{ formatDate(item.created_at) }}</div>
         </div>
         <div class="queue-actions">
-          <el-progress
-            v-if="item.status === 'running'"
-            :percentage="item.progress"
-            :show-text="false"
-            :stroke-width="6"
-            status="warning"
-            style="width: 100px"
-          />
+          <!-- 进度条：在pending和running状态都显示 -->
+          <div v-if="item.status === 'pending' || item.status === 'running'" class="progress-container">
+            <el-progress
+              :percentage="item.progress || 0"
+              :stroke-width="6"
+              :status="item.status === 'running' ? 'warning' : undefined"
+              style="width: 100px"
+            />
+            <span class="progress-text">{{ item.progress || 0 }}%</span>
+          </div>
           <el-button
             v-if="item.status === 'completed' && item.report_id"
             size="small"
@@ -181,5 +183,17 @@ const {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.progress-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  
+  .progress-text {
+    font-size: 12px;
+    color: #909399;
+    min-width: 32px;
+  }
 }
 </style>

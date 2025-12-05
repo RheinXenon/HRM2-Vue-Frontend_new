@@ -148,6 +148,27 @@ export const positionApi = {
     if (!response.ok) {
       throw new Error(`移除简历失败: ${response.status}`)
     }
+  },
+
+  // AI生成岗位要求
+  aiGenerate: async (data: {
+    description: string
+    documents?: Array<{ name: string; content: string }>
+  }): Promise<PositionData> => {
+    const response = await fetch(`${API_BASE}/position-settings/ai/generate/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    })
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || `AI生成失败: ${response.status}`)
+    }
+    const result = await response.json()
+    if (result.code !== 200) {
+      throw new Error(result.message || 'AI生成失败')
+    }
+    return result.data
   }
 }
 

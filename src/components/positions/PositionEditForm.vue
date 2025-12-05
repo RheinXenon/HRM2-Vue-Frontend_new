@@ -6,6 +6,22 @@
           {{ selectedPositionId ? '编辑岗位' : '选择岗位' }}
         </span>
         <div v-if="selectedPositionId" class="header-actions">
+          <!-- AI 工具按钮组 -->
+          <div class="tool-buttons">
+            <el-tooltip content="AI 智能生成岗位要求" placement="top">
+              <el-button size="small" @click="showAIDrawer = true">
+                <el-icon><MagicStick /></el-icon>
+                AI 生成
+              </el-button>
+            </el-tooltip>
+            <el-tooltip content="查看当前表单的 JSON 数据" placement="top">
+              <el-button size="small" @click="showJsonDialog = true">
+                <el-icon><Document /></el-icon>
+                显示 JSON
+              </el-button>
+            </el-tooltip>
+          </div>
+          <el-divider direction="vertical" />
           <el-tag :type="hasChanges ? 'warning' : 'success'">
             {{ hasChanges ? '未保存' : '已保存' }}
           </el-tag>
@@ -168,13 +184,28 @@
         </div>
       </el-form-item>
     </el-form>
+
+    <!-- AI 生成抽屉 -->
+    <PositionAIGenerateDrawer
+      v-model="showAIDrawer"
+      @apply="handleAIApply"
+    />
+
+    <!-- JSON 显示对话框 -->
+    <PositionJsonDialog
+      v-model="showJsonDialog"
+      :form-data="formData"
+    />
   </el-card>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { MagicStick, Document } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import type { PositionData } from '@/types'
+import PositionAIGenerateDrawer from './PositionAIGenerateDrawer.vue'
+import PositionJsonDialog from './PositionJsonDialog.vue'
 
 const props = defineProps<{
   formData: PositionData
@@ -188,6 +219,27 @@ defineEmits<{
 }>()
 
 const formRef = ref<FormInstance>()
+const showAIDrawer = ref(false)
+const showJsonDialog = ref(false)
+
+// 处理AI生成结果应用
+const handleAIApply = (data: PositionData) => {
+  // 将AI生成的数据应用到表单
+  Object.assign(props.formData, {
+    position: data.position || props.formData.position,
+    description: data.description || '',
+    required_skills: data.required_skills || [],
+    optional_skills: data.optional_skills || [],
+    min_experience: data.min_experience ?? 0,
+    education: data.education || [],
+    certifications: data.certifications || [],
+    salary_range: data.salary_range || [0, 0],
+    project_requirements: data.project_requirements || {
+      min_projects: 0,
+      team_lead_experience: false
+    }
+  })
+}
 
 // 表单验证规则
 const formRules: FormRules = {
@@ -271,6 +323,16 @@ defineExpose({ validate })
   display: flex;
   align-items: center;
   gap: 12px;
+  
+  .tool-buttons {
+    display: flex;
+    gap: 8px;
+  }
+  
+  .el-divider--vertical {
+    height: 20px;
+    margin: 0 4px;
+  }
 }
 
 .form-card {

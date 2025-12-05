@@ -41,13 +41,13 @@
           <p>将简历文件拖拽到此处，或</p>
           <el-button type="primary" @click="triggerFileInput">点击选择文件</el-button>
         </div>
-        <p class="upload-hint">支持 PDF、DOC、DOCX、TXT 格式，单个文件不超过10MB</p>
+        <p class="upload-hint">支持 PDF、DOCX、TXT、Markdown 格式，单个文件不超过10MB</p>
       </div>
       <input
         ref="fileInput"
         type="file"
         multiple
-        accept=".pdf,.doc,.docx,.txt"
+        accept=".pdf,.docx,.txt,.md"
         style="display: none"
         @change="handleFileSelect"
       />

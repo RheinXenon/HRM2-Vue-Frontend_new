@@ -178,7 +178,7 @@
         :file-list="uploadFileList"
         :on-change="handleFileChange"
         :on-remove="handleFileRemove"
-        accept=".pdf,.doc,.docx,.txt,.md"
+        accept=".pdf,.docx,.txt,.md"
       >
         <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
         <div class="el-upload__text">
@@ -186,7 +186,7 @@
         </div>
         <template #tip>
           <div class="el-upload__tip">
-            支持 PDF、Word、TXT、Markdown 格式，单次最多上传 50 份
+            支持 PDF、DOCX、TXT、Markdown 格式，单次最多上传 50 份
           </div>
         </template>
       </el-upload>
@@ -396,11 +396,6 @@ const readFileAsText = async (file: File): Promise<string> => {
       console.error('mammoth 解析失败:', err)
       return `[${file.name} - Word 解析失败: ${err}]`
     }
-  }
-
-  // 旧版 .doc 文件不支持
-  if (ext === 'doc') {
-    return `[${file.name} - 旧版 .doc 格式不支持，请转换为 .docx 格式]`
   }
 
   // PDF 文件使用 pdfjs-dist 解析

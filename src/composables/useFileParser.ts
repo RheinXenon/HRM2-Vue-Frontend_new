@@ -29,8 +29,8 @@ export function useFileParser() {
     const name = file.name.toLowerCase()
     const ext = name.split('.').pop() || ''
 
-    // TXT 文件直接读取
-    if (file.type.includes('text') || ext === 'txt') {
+    // TXT、Markdown 文件直接读取
+    if (file.type.includes('text') || ext === 'txt' || ext === 'md') {
       return new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve(reader.result as string || '')
@@ -53,11 +53,6 @@ export function useFileParser() {
         console.error('mammoth 解析失败:', err)
         return `[${file.name} - Word 解析失败: ${err}]`
       }
-    }
-
-    // 旧版 .doc 文件不支持
-    if (ext === 'doc') {
-      return `[${file.name} - 旧版 .doc 格式不支持，请转换为 .docx 格式]`
     }
 
     // PDF 文件使用 pdfjs-dist 解析
@@ -112,7 +107,7 @@ export function useFileParser() {
   // 处理文件列表
   const processFiles = async (files: File[]) => {
     const validFiles = files.filter(file => {
-      const isValidType = /\.(pdf|doc|docx|txt)$/i.test(file.name)
+      const isValidType = /\.(pdf|docx|txt|md)$/i.test(file.name)
       const isValidSize = file.size <= 10 * 1024 * 1024
       if (!isValidType) ElMessage.error(`"${file.name}" 格式不支持`)
       if (!isValidSize) ElMessage.error(`"${file.name}" 超过10MB`)

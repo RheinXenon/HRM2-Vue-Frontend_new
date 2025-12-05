@@ -38,7 +38,7 @@ apiClient.interceptors.response.use(
  * 后端路径: /position-settings/
  */
 export const positionApi = {
-  // 获取岗位设置
+  // 获取默认岗位设置（向后兼容）
   getCriteria: async (): Promise<PositionData> => {
     const response = await fetch(`${API_BASE}/position-settings/`)
     if (!response.ok) {
@@ -51,7 +51,7 @@ export const positionApi = {
     return result.data
   },
 
-  // 保存岗位设置
+  // 保存默认岗位设置（向后兼容）
   saveCriteria: async (data: PositionData): Promise<void> => {
     const response = await fetch(`${API_BASE}/position-settings/`, {
       method: 'POST',
@@ -60,6 +60,93 @@ export const positionApi = {
     })
     if (!response.ok) {
       throw new Error(`保存数据失败: ${response.status}`)
+    }
+  },
+
+  // 获取所有岗位列表
+  getPositions: async (params?: { include_resumes?: boolean }): Promise<{ positions: PositionData[], total: number }> => {
+    const searchParams = new URLSearchParams()
+    if (params?.include_resumes) searchParams.append('include_resumes', 'true')
+    const url = `${API_BASE}/position-settings/positions/${searchParams.toString() ? '?' + searchParams : ''}`
+    const response = await fetch(url)
+    if (!response.ok) {
+      throw new Error(`获取岗位列表失败: ${response.status}`)
+    }
+    const result = await response.json()
+    return result.data || { positions: [], total: 0 }
+  },
+
+  // 创建新岗位
+  createPosition: async (data: Partial<PositionData>): Promise<PositionData> => {
+    const response = await fetch(`${API_BASE}/position-settings/positions/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    })
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || `创建岗位失败: ${response.status}`)
+    }
+    const result = await response.json()
+    return result.data
+  },
+
+  // 获取单个岗位详情
+  getPosition: async (positionId: string, includeResumes = true): Promise<PositionData> => {
+    const url = `${API_BASE}/position-settings/positions/${positionId}/?include_resumes=${includeResumes}`
+    const response = await fetch(url)
+    if (!response.ok) {
+      throw new Error(`获取岗位详情失败: ${response.status}`)
+    }
+    const result = await response.json()
+    return result.data
+  },
+
+  // 更新岗位
+  updatePosition: async (positionId: string, data: Partial<PositionData>): Promise<PositionData> => {
+    const response = await fetch(`${API_BASE}/position-settings/positions/${positionId}/`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    })
+    if (!response.ok) {
+      throw new Error(`更新岗位失败: ${response.status}`)
+    }
+    const result = await response.json()
+    return result.data
+  },
+
+  // 删除岗位
+  deletePosition: async (positionId: string): Promise<void> => {
+    const response = await fetch(`${API_BASE}/position-settings/positions/${positionId}/`, {
+      method: 'DELETE'
+    })
+    if (!response.ok) {
+      throw new Error(`删除岗位失败: ${response.status}`)
+    }
+  },
+
+  // 分配简历到岗位
+  assignResumes: async (positionId: string, resumeDataIds: string[]): Promise<{ assigned_count: number, total_resumes: number }> => {
+    const response = await fetch(`${API_BASE}/position-settings/positions/${positionId}/assign-resumes/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resume_data_ids: resumeDataIds })
+    })
+    if (!response.ok) {
+      throw new Error(`分配简历失败: ${response.status}`)
+    }
+    const result = await response.json()
+    return result.data
+  },
+
+  // 从岗位移除简历
+  removeResume: async (positionId: string, resumeId: string): Promise<void> => {
+    const response = await fetch(`${API_BASE}/position-settings/positions/${positionId}/remove-resume/${resumeId}/`, {
+      method: 'DELETE'
+    })
+    if (!response.ok) {
+      throw new Error(`移除简历失败: ${response.status}`)
     }
   }
 }

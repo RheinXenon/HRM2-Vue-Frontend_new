@@ -12,96 +12,65 @@
     <div class="content-grid">
       <!-- 左侧面板 -->
       <div class="left-panel">
-        <!-- 岗位信息卡片 -->
-        <el-card class="position-card" shadow="hover">
-          <template #header>
-            <div class="card-header">
-              <span class="card-title">当前招聘岗位</span>
-              <router-link to="/positions">
-                <el-button type="primary" link size="small">编辑</el-button>
-              </router-link>
-            </div>
-          </template>
-          <div class="position-info">
-            <div class="info-item">
-              <span class="label">岗位名称:</span>
-              <span class="value">{{ positionData.position }}</span>
-            </div>
-            <div class="info-item">
-              <span class="label">工作经验:</span>
-              <span class="value">{{ positionData.min_experience }}年以上</span>
-            </div>
-            <div class="info-item">
-              <span class="label">学历要求:</span>
-              <span class="value">{{ positionData.education?.join('、') || '不限' }}</span>
-            </div>
-            <div class="info-item">
-              <span class="label">薪资范围:</span>
-              <span class="value">
-                {{ positionData.salary_range?.[0] }} - {{ positionData.salary_range?.[1] }} 元/月
-              </span>
-            </div>
-            <div class="info-item skills">
-              <span class="label">必备技能:</span>
-              <div class="tags">
-                <el-tag v-for="skill in positionData.required_skills" :key="skill" size="small" type="primary">
-                  {{ skill }}
-                </el-tag>
-              </div>
-            </div>
-          </div>
-        </el-card>
-
-        <!-- 简历组列表 -->
+        <!-- 岗位列表（即简历组） -->
         <el-card class="groups-card" shadow="hover">
           <template #header>
             <div class="card-header">
-              <span class="card-title">简历组</span>
-              <el-button type="primary" size="small" @click="showCreateGroupDialog">
-                创建组
-              </el-button>
+              <span class="card-title">招聘岗位</span>
+              <router-link to="/positions">
+                <el-button type="primary" size="small">管理岗位</el-button>
+              </router-link>
             </div>
           </template>
-          <div v-if="resumeGroups.length === 0" class="empty-groups">
-            <el-empty description="暂无简历组" :image-size="60" />
+          <div v-if="positionsList.length === 0" class="empty-groups">
+            <el-empty description="暂无岗位，请先创建岗位" :image-size="60">
+              <router-link to="/positions">
+                <el-button type="primary" size="small">创建岗位</el-button>
+              </router-link>
+            </el-empty>
           </div>
           <div v-else class="groups-list">
-            <div v-for="group in resumeGroups" :key="group.id" class="group-item-card">
+            <div 
+              v-for="pos in positionsList" 
+              :key="pos.id" 
+              class="group-item-card"
+              :class="{ active: selectedPositionId === pos.id }"
+              @click="selectPosition(pos)"
+            >
               <div class="group-header">
                 <div class="group-title">
-                  <span class="group-name">{{ group.group_name || group.position_title }}</span>
-                  <el-tag :type="getGroupStatusType(group.status)" size="small">
-                    {{ getGroupStatusText(group.status) }}
+                  <span class="group-name">{{ pos.position }}</span>
+                  <el-tag :type="getPositionStatusType(pos.status)" size="small">
+                    {{ getPositionStatusText(pos.status) }}
                   </el-tag>
                 </div>
-                <div class="group-meta">{{ group.resume_count }} 份简历</div>
+                <div class="group-meta">{{ pos.resume_count || 0 }} 份简历</div>
               </div>
-              <!-- 组中的简历列表 -->
-              <div v-if="group.resumes && group.resumes.length > 0" class="resumes-preview">
-                <div class="resumes-title">组中的简历:</div>
+              <!-- 岗位中的简历列表 -->
+              <div v-if="pos.resumes && pos.resumes.length > 0" class="resumes-preview">
+                <div class="resumes-title">已分配的简历:</div>
                 <div class="resumes-list">
                   <div 
-                    v-for="(resume, index) in group.resumes.slice(0, group.showAll ? undefined : 3)" 
+                    v-for="resume in pos.resumes.slice(0, (pos as any).showAll ? undefined : 3)" 
                     :key="resume.id" 
                     class="resume-item"
                   >
                     <div class="resume-info">
                       <span class="resume-name">{{ resume.candidate_name || '未知候选人' }}</span>
-                      <span class="resume-position">{{ resume.position_title }}</span>
                     </div>
                     <div class="resume-score" v-if="resume.screening_score">
                       <el-tag size="small" type="success">
-                        综合: {{ resume.screening_score.comprehensive_score }}
+                        {{ resume.screening_score.comprehensive_score }}
                       </el-tag>
                     </div>
                   </div>
                   <div 
-                    v-if="group.resumes.length > 3" 
+                    v-if="pos.resumes.length > 3" 
                     class="toggle-resumes"
-                    @click="toggleGroupResumes(group)"
+                    @click.stop="togglePositionResumes(pos)"
                   >
-                    <span>{{ group.showAll ? '收起' : `展开剩余 ${group.resumes.length - 3} 份简历` }}</span>
-                    <el-icon><ArrowDown v-if="!group.showAll" /><ArrowUp v-else /></el-icon>
+                    <span>{{ (pos as any).showAll ? '收起' : `展开剩余 ${pos.resumes.length - 3} 份` }}</span>
+                    <el-icon><ArrowDown v-if="!(pos as any).showAll" /><ArrowUp v-else /></el-icon>
                   </div>
                 </div>
               </div>
@@ -354,14 +323,22 @@
       </div>
     </div>
 
-    <!-- 创建简历组对话框 -->
-    <el-dialog v-model="createGroupDialogVisible" title="创建简历组" width="80%" @close="handleCreateDialogClose">
+    <!-- 分配简历到岗位对话框 -->
+    <el-dialog v-model="createGroupDialogVisible" title="分配简历到岗位" width="80%" @close="handleCreateDialogClose">
       <el-alert
-        title="请选择要加入新简历组的简历，注意所选简历的岗位信息必须一致"
+        title="选择已完成初筛的简历，分配到当前选中的岗位"
         type="info"
         show-icon
         style="margin-bottom: 16px;"
       />
+      
+      <div v-if="selectedPositionId" class="selected-position-info">
+        <span>目标岗位: </span>
+        <el-tag type="primary">{{ positionData.position }}</el-tag>
+      </div>
+      <div v-else class="no-position-warning">
+        <el-alert title="请先在左侧选择一个岗位" type="warning" show-icon />
+      </div>
       
       <div class="resumes-selection">
         <el-table
@@ -376,7 +353,6 @@
               <el-checkbox
                 v-model="selectedResumeIds"
                 :label="row.id"
-                :disabled="isResumeDisabled(row)"
               />
             </template>
           </el-table-column>
@@ -385,7 +361,6 @@
               {{ row.candidate_name || '未知候选人' }}
             </template>
           </el-table-column>
-          <el-table-column prop="position_title" label="岗位" min-width="150" />
           <el-table-column label="综合评分" width="100" align="center">
             <template #default="{ row }">
               <span v-if="row.screening_score">{{ row.screening_score.comprehensive_score }}</span>
@@ -404,28 +379,28 @@
         <el-button @click="createGroupDialogVisible = false">取消</el-button>
         <el-button 
           type="primary" 
-          @click="createGroup"
-          :disabled="selectedResumeIds.length === 0"
+          @click="assignResumesToPosition"
+          :disabled="selectedResumeIds.length === 0 || !selectedPositionId"
           :loading="creatingGroup"
         >
-          确认创建 ({{ selectedResumeIds.length }})
+          分配到岗位 ({{ selectedResumeIds.length }})
         </el-button>
       </template>
     </el-dialog>
 
-    <!-- 添加到简历组对话框 -->
-    <el-dialog v-model="addToGroupDialogVisible" title="添加到简历组" width="500px">
-      <el-select v-model="selectedGroupId" placeholder="请选择简历组" style="width: 100%">
+    <!-- 添加到岗位对话框 -->
+    <el-dialog v-model="addToGroupDialogVisible" title="分配到岗位" width="500px">
+      <el-select v-model="selectedGroupId" placeholder="请选择目标岗位" style="width: 100%">
         <el-option
-          v-for="group in resumeGroups"
-          :key="group.id"
-          :label="`${group.group_name} (${group.resume_count}份简历)`"
-          :value="group.id"
+          v-for="pos in positionsList"
+          :key="pos.id"
+          :label="`${pos.position} (${pos.resume_count || 0}份简历)`"
+          :value="pos.id"
         />
       </el-select>
       <template #footer>
         <el-button @click="addToGroupDialogVisible = false">取消</el-button>
-        <el-button type="primary" :disabled="!selectedGroupId" @click="addToGroup">确认添加</el-button>
+        <el-button type="primary" :disabled="!selectedGroupId" @click="addToGroup">确认分配</el-button>
       </template>
     </el-dialog>
 
@@ -469,7 +444,11 @@ const positionData = ref<PositionData>({
   project_requirements: { min_projects: 2, team_lead_experience: false }
 })
 
-// 简历组
+// 岗位列表（替代简历组）
+const positionsList = ref<PositionData[]>([])
+const selectedPositionId = ref<string | null>(null)
+
+// 简历组（保留兼容）
 const resumeGroups = ref<ResumeGroup[]>([])
 
 // 文件相关
@@ -517,7 +496,57 @@ const statusFilters = [
 const hasParsedFiles = computed(() => selectedFiles.value.some(f => f.status === 'parsed'))
 const parsedFilesCount = computed(() => selectedFiles.value.filter(f => f.status === 'parsed').length)
 
-// 加载岗位数据
+// 加载岗位列表（替代简历组）
+const loadPositionsList = async () => {
+  try {
+    const result = await positionApi.getPositions({ include_resumes: true })
+    positionsList.value = (result.positions || []).map(p => ({ ...p, showAll: false }))
+    
+    // 如果有岗位且未选中，默认选中第一个
+    if (positionsList.value.length > 0 && !selectedPositionId.value) {
+      selectedPositionId.value = positionsList.value[0].id || null
+      positionData.value = positionsList.value[0]
+    }
+  } catch (err) {
+    console.error('加载岗位列表失败:', err)
+  }
+}
+
+// 选择岗位
+const selectPosition = (pos: PositionData) => {
+  selectedPositionId.value = pos.id || null
+  positionData.value = pos
+}
+
+// 岗位状态映射
+const getPositionStatusType = (status?: string) => {
+  const map: Record<string, 'success' | 'warning' | 'info' | 'danger'> = {
+    pending: 'info',
+    interview_analysis: 'warning',
+    interview_analysis_completed: 'warning',
+    comprehensive_screening: 'warning',
+    completed: 'success'
+  }
+  return map[status || 'pending'] || 'info'
+}
+
+const getPositionStatusText = (status?: string) => {
+  const map: Record<string, string> = {
+    pending: '待分析',
+    interview_analysis: '面试分析中',
+    interview_analysis_completed: '面试分析完成',
+    comprehensive_screening: '综合筛选中',
+    completed: '已完成'
+  }
+  return map[status || 'pending'] || '待分析'
+}
+
+// 切换岗位中简历的展开/收起状态
+const togglePositionResumes = (pos: PositionData & { showAll?: boolean }) => {
+  (pos as any).showAll = !(pos as any).showAll
+}
+
+// 加载岗位数据（向后兼容）
 const loadPositionData = async () => {
   try {
     const data = await positionApi.getCriteria()
@@ -527,11 +556,10 @@ const loadPositionData = async () => {
   }
 }
 
-// 加载简历组（包含简历详情）
+// 加载简历组（包含简历详情）- 保留兼容
 const loadResumeGroups = async () => {
   try {
     const groups = await screeningApi.getGroups({ include_resumes: true })
-    // 为每个组添加 showAll 属性
     resumeGroups.value = groups.map(g => ({ ...g, showAll: false }))
   } catch (err) {
     console.error('加载简历组失败:', err)
@@ -882,42 +910,35 @@ const handleCreateDialogClose = () => {
   availableResumes.value = []
 }
 
-const createGroup = async () => {
+// 分配简历到当前选中的岗位
+const assignResumesToPosition = async () => {
   if (selectedResumeIds.value.length === 0) {
     ElMessage.warning('请至少选择一份简历')
     return
   }
   
-  // 获取选中的简历
-  const selectedResumes = availableResumes.value.filter(
-    r => selectedResumeIds.value.includes(r.id)
-  )
-  
-  // 检查岗位一致性
-  const positionTitles = Array.from(new Set(selectedResumes.map(r => r.position_title)))
-  if (positionTitles.length > 1) {
-    ElMessage.error('所选简历的岗位信息不一致，请重新选择')
+  if (!selectedPositionId.value) {
+    ElMessage.warning('请先选择一个目标岗位')
     return
   }
   
   creatingGroup.value = true
   try {
-    const groupData = {
-      group_name: `${positionTitles[0]}简历组${new Date().toLocaleDateString()}`,
-      description: `基于${positionTitles[0]}岗位的简历筛选组`,
-      resume_data_ids: selectedResumeIds.value
-    }
-    
-    await screeningApi.createGroup(groupData)
-    ElMessage.success('简历组创建成功')
+    const result = await positionApi.assignResumes(selectedPositionId.value, selectedResumeIds.value)
+    ElMessage.success(`成功分配 ${result.assigned_count} 份简历到岗位`)
     createGroupDialogVisible.value = false
-    loadResumeGroups()
+    loadPositionsList()  // 刷新岗位列表
   } catch (err) {
-    console.error('创建简历组失败:', err)
-    ElMessage.error('创建简历组失败')
+    console.error('分配简历失败:', err)
+    ElMessage.error('分配简历失败')
   } finally {
     creatingGroup.value = false
   }
+}
+
+// 保留旧的 createGroup 函数用于兼容
+const createGroup = async () => {
+  await assignResumesToPosition()
 }
 
 const showAddToGroupDialog = (task: ProcessingTask) => {
@@ -926,18 +947,16 @@ const showAddToGroupDialog = (task: ProcessingTask) => {
   addToGroupDialogVisible.value = true
 }
 
+// 添加简历到指定岗位
 const addToGroup = async () => {
   if (!selectedGroupId.value || !currentTaskForGroup.value?.report_id) return
   try {
-    await screeningApi.addResumeToGroup({
-      group_id: selectedGroupId.value,
-      resume_data_id: currentTaskForGroup.value.report_id
-    })
-    ElMessage.success('添加成功')
+    await positionApi.assignResumes(selectedGroupId.value, [currentTaskForGroup.value.report_id])
+    ElMessage.success('分配成功')
     addToGroupDialogVisible.value = false
-    loadResumeGroups()
+    loadPositionsList()  // 刷新岗位列表
   } catch (err) {
-    ElMessage.error('添加失败')
+    ElMessage.error('分配失败')
   }
 }
 
@@ -1057,8 +1076,7 @@ const showAddToGroupDialogFromHistory = (task: ResumeScreeningTask) => {
 
 // 生命周期
 onMounted(() => {
-  loadPositionData()
-  loadResumeGroups()
+  loadPositionsList()  // 加载岗位列表（替代 loadResumeGroups）
   loadHistoryTasks()
 })
 
@@ -1154,7 +1172,18 @@ onUnmounted(() => {
   padding: 12px;
   background: #fafafa;
   border-radius: 8px;
-  border: 1px solid #e4e7ed;
+  border: 2px solid #e4e7ed;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background: #f0f2f5;
+  }
+
+  &.active {
+    background: #ecf5ff;
+    border-color: #409eff;
+  }
 
   .group-header {
     display: flex;
@@ -1246,7 +1275,22 @@ onUnmounted(() => {
   }
 }
 
-// 创建简历组弹窗
+// 分配简历到岗位弹窗
+.selected-position-info {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #f0f9eb;
+  border-radius: 6px;
+  
+  span {
+    color: #606266;
+  }
+}
+
+.no-position-warning {
+  margin-bottom: 16px;
+}
+
 .resumes-selection {
   max-height: 50vh;
   overflow-y: auto;

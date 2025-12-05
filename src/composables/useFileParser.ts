@@ -39,27 +39,37 @@ export function useFileParser() {
       })
     }
 
-    // Word 文件 (.doc, .docx) 使用 mammoth 解析
-    if (ext === 'doc' || ext === 'docx') {
+    // Word 文件 (.docx) 使用 mammoth 解析
+    // 注意：mammoth 只支持 .docx 格式，不支持旧版 .doc
+    if (ext === 'docx') {
       try {
-        const mammoth = await import('mammoth')
+        const mammothModule = await import('mammoth')
+        // 处理 ESM 和 CJS 模块兼容
+        const mammoth = mammothModule.default || mammothModule
         const arrayBuffer = await readFileAsArrayBuffer(file)
         const result = await mammoth.extractRawText({ arrayBuffer })
         return result.value || `[${file.name} 的内容解析为空]`
       } catch (err) {
         console.error('mammoth 解析失败:', err)
-        return `[${file.name} - Word 解析失败]`
+        return `[${file.name} - Word 解析失败: ${err}]`
       }
+    }
+
+    // 旧版 .doc 文件不支持
+    if (ext === 'doc') {
+      return `[${file.name} - 旧版 .doc 格式不支持，请转换为 .docx 格式]`
     }
 
     // PDF 文件使用 pdfjs-dist 解析
     if (ext === 'pdf') {
       try {
         const arrayBuffer = await readFileAsArrayBuffer(file)
-        const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
+        // 动态导入 pdfjs-dist
+        const pdfjsLib = await import('pdfjs-dist')
         
-        // 设置 worker
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+        // 使用 Vite 的 ?url 导入本地 worker
+        const workerUrl = await import('pdfjs-dist/build/pdf.worker.min.mjs?url')
+        pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl.default
 
         const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
         const pdf = await loadingTask.promise
@@ -75,7 +85,7 @@ export function useFileParser() {
         return fullText.trim() || `[${file.name} 的内容解析为空]`
       } catch (err) {
         console.error('pdf.js 解析失败:', err)
-        return `[${file.name} - PDF 解析失败]`
+        return `[${file.name} - PDF 解析失败: ${err}]`
       }
     }
 

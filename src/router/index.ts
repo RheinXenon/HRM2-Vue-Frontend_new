@@ -21,6 +21,12 @@ const router = createRouter({
           meta: { title: '岗位设置 - HRM2招聘管理系统' }
         },
         {
+          path: 'library',
+          name: 'library',
+          component: () => import('@/views/ResumeLibraryView.vue'),
+          meta: { title: '简历库 - HRM2招聘管理系统' }
+        },
+        {
           path: 'screening',
           name: 'screening',
           component: () => import('@/views/ScreeningView.vue'),

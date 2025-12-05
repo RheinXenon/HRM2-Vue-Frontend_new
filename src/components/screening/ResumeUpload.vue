@@ -12,8 +12,23 @@
       </div>
     </template>
 
-    <!-- 上传区域 -->
+    <!-- 上传方式选择 -->
+    <div class="upload-mode-tabs">
+      <el-radio-group v-model="uploadMode" size="default">
+        <el-radio-button value="file">
+          <el-icon><Upload /></el-icon>
+          上传文件
+        </el-radio-button>
+        <el-radio-button value="library">
+          <el-icon><FolderOpened /></el-icon>
+          从简历库选择
+        </el-radio-button>
+      </el-radio-group>
+    </div>
+
+    <!-- 上传区域（文件上传模式） -->
     <div
+      v-if="uploadMode === 'file'"
       class="upload-area"
       :class="{ 'drag-over': isDragOver }"
       @drop="handleDrop"
@@ -38,8 +53,89 @@
       />
     </div>
 
-    <!-- 文件列表 -->
-    <div v-if="selectedFiles.length > 0" class="file-list">
+    <!-- 简历库选择区域 -->
+    <div v-else class="library-select-area">
+      <div class="library-header">
+        <span>已从简历库选择 {{ librarySelectedCount }} 份简历</span>
+        <el-button type="primary" @click="showLibraryDialog">
+          <el-icon><Plus /></el-icon>
+          选择简历
+        </el-button>
+      </div>
+      <div v-if="librarySelectedFiles.length > 0" class="library-selected-list">
+        <div v-for="file in librarySelectedFiles" :key="file.id" class="library-item">
+          <div class="library-item-info">
+            <el-icon><Document /></el-icon>
+            <span class="file-name">{{ file.filename }}</span>
+            <span v-if="file.candidate_name" class="candidate-name">
+              ({{ file.candidate_name }})
+            </span>
+          </div>
+          <el-button type="danger" link size="small" @click="removeLibraryFile(file.id)">
+            移除
+          </el-button>
+        </div>
+      </div>
+      <div v-else class="library-empty">
+        <el-empty description="点击上方按钮从简历库选择简历" :image-size="60" />
+      </div>
+      
+      <!-- 简历库选择操作按钮 -->
+      <div v-if="librarySelectedFiles.length > 0" class="action-buttons">
+        <el-button
+          type="primary"
+          :loading="isSubmitting"
+          @click="$emit('submit')"
+        >
+          {{ isSubmitting ? '提交中...' : `提交 ${librarySelectedCount} 份简历进行初筛` }}
+        </el-button>
+        <el-button @click="clearLibrarySelection">清空选择</el-button>
+      </div>
+    </div>
+
+    <!-- 简历库选择对话框 -->
+    <el-dialog
+      v-model="libraryDialogVisible"
+      title="从简历库选择简历"
+      width="800px"
+      :close-on-click-modal="false"
+    >
+      <el-table
+        v-loading="libraryLoading"
+        :data="libraryList"
+        style="width: 100%"
+        max-height="400"
+        @selection-change="(rows: LibraryResume[]) => libraryTempSelected = rows.map(r => r.id)"
+      >
+        <el-table-column type="selection" width="50" />
+        <el-table-column prop="filename" label="文件名" min-width="200" />
+        <el-table-column prop="candidate_name" label="候选人" width="120">
+          <template #default="{ row }">
+            {{ row.candidate_name || '未识别' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="标识" width="100">
+          <template #default="{ row }">
+            <span class="hash-value">{{ row.file_hash }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="created_at" label="上传时间" width="160">
+          <template #default="{ row }">
+            {{ formatDate(row.created_at) }}
+          </template>
+        </el-table-column>
+      </el-table>
+      
+      <template #footer>
+        <el-button @click="libraryDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmLibrarySelection">
+          确认选择 ({{ libraryTempSelected.length }})
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 文件列表（仅文件上传模式显示） -->
+    <div v-if="uploadMode === 'file' && selectedFiles.length > 0" class="file-list">
       <div class="file-list-header">
         <h4>已选文件 ({{ selectedFiles.length }})</h4>
       </div>
@@ -84,22 +180,82 @@
 
 <script setup lang="ts">
 import { ref, computed, reactive, watch } from 'vue'
-import { Upload, Document } from '@element-plus/icons-vue'
+import { Upload, Document, FolderOpened, Plus } from '@element-plus/icons-vue'
 import { useFileParser } from '@/composables/useFileParser'
 import { useScreeningUtils } from '@/composables/useScreeningUtils'
+import { libraryApi, type LibraryResume } from '@/api'
 
 const props = defineProps<{
   isSubmitting: boolean
   positionName?: string
+  assignedHashes?: string[]  // 已分配到岗位的简历哈希值
 }>()
 
 const emit = defineEmits<{
   submit: []
   preview: [file: any]
   filesChanged: [files: any[]]
+  libraryFilesChanged: [files: LibraryResume[]]
 }>()
 
-const { formatFileSize } = useScreeningUtils()
+// 上传模式
+const uploadMode = ref<'file' | 'library'>('file')
+
+// 简历库相关
+const libraryDialogVisible = ref(false)
+const libraryLoading = ref(false)
+const libraryList = ref<LibraryResume[]>([])
+const librarySelectedFiles = ref<LibraryResume[]>([])
+const libraryTempSelected = ref<string[]>([])
+
+const librarySelectedCount = computed(() => librarySelectedFiles.value.length)
+
+// 显示简历库选择对话框
+const showLibraryDialog = async () => {
+  libraryDialogVisible.value = true
+  libraryLoading.value = true
+  try {
+    const result = await libraryApi.getList({ page_size: 100 })
+    // 过滤掉已分配的简历（基于哈希值）
+    if (props.assignedHashes && props.assignedHashes.length > 0) {
+      libraryList.value = result.resumes.filter(
+        r => !props.assignedHashes!.includes(r.file_hash)
+      )
+    } else {
+      libraryList.value = result.resumes
+    }
+    // 恢复已选择的状态
+    libraryTempSelected.value = librarySelectedFiles.value.map(f => f.id)
+  } catch (error) {
+    console.error('加载简历库失败:', error)
+  } finally {
+    libraryLoading.value = false
+  }
+}
+
+// 确认选择
+const confirmLibrarySelection = () => {
+  librarySelectedFiles.value = libraryList.value.filter(
+    r => libraryTempSelected.value.includes(r.id)
+  )
+  libraryDialogVisible.value = false
+  emit('libraryFilesChanged', librarySelectedFiles.value)
+}
+
+// 移除简历库选择的文件
+const removeLibraryFile = (id: string) => {
+  librarySelectedFiles.value = librarySelectedFiles.value.filter(f => f.id !== id)
+  emit('libraryFilesChanged', librarySelectedFiles.value)
+}
+
+// 清空简历库选择
+const clearLibrarySelection = () => {
+  librarySelectedFiles.value = []
+  libraryTempSelected.value = []
+  emit('libraryFilesChanged', [])
+}
+
+const { formatFileSize, formatDate } = useScreeningUtils()
 const { 
   selectedFiles, 
   isDragOver, 
@@ -158,7 +314,12 @@ defineExpose({
   selectedFiles,
   hasParsedFiles,
   parsedFilesCount,
-  clearAll
+  clearAll,
+  // 简历库相关
+  uploadMode,
+  librarySelectedFiles,
+  librarySelectedCount,
+  clearLibrarySelection
 })
 </script>
 
@@ -269,5 +430,83 @@ defineExpose({
   margin-top: 16px;
   display: flex;
   gap: 12px;
+}
+
+// 上传模式选择
+.upload-mode-tabs {
+  margin-bottom: 16px;
+  
+  :deep(.el-radio-button__inner) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+}
+
+// 简历库选择区域
+.library-select-area {
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.library-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  
+  span {
+    color: #606266;
+    font-size: 14px;
+  }
+}
+
+.library-selected-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.library-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.library-item-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  
+  .file-name {
+    color: #303133;
+    font-size: 14px;
+  }
+  
+  .candidate-name {
+    color: #909399;
+    font-size: 13px;
+  }
+}
+
+.library-empty {
+  padding: 20px 0;
+}
+
+.hash-value {
+  font-family: monospace;
+  font-size: 12px;
+  color: #909399;
+  background: #f5f7fa;
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 </style>

@@ -485,4 +485,140 @@ export const recommendApi = {
   }
 }
 
+/**
+ * 简历库 API
+ * 后端路径: /resume-screening/library/
+ */
+export const libraryApi = {
+  // 获取简历库列表
+  getList: async (params?: {
+    page?: number
+    page_size?: number
+    keyword?: string
+    is_screened?: boolean
+    is_assigned?: boolean
+  }): Promise<{
+    resumes: LibraryResume[]
+    total: number
+    page: number
+    page_size: number
+  }> => {
+    const searchParams = new URLSearchParams()
+    if (params?.page) searchParams.append('page', params.page.toString())
+    if (params?.page_size) searchParams.append('page_size', params.page_size.toString())
+    if (params?.keyword) searchParams.append('keyword', params.keyword)
+    if (params?.is_screened !== undefined) searchParams.append('is_screened', params.is_screened.toString())
+    if (params?.is_assigned !== undefined) searchParams.append('is_assigned', params.is_assigned.toString())
+    
+    const url = `${API_BASE}/resume-screening/library/${searchParams.toString() ? '?' + searchParams : ''}`
+    const response = await fetch(url)
+    if (!response.ok) {
+      throw new Error(`获取简历库失败: ${response.status}`)
+    }
+    const result = await response.json()
+    return result.data || { resumes: [], total: 0, page: 1, page_size: 20 }
+  },
+
+  // 上传简历到简历库
+  upload: async (resumes: Array<{
+    name: string
+    content: string
+    metadata?: { size?: number; type?: string }
+  }>): Promise<{
+    uploaded: Array<{ id: string; filename: string; candidate_name: string }>
+    skipped: Array<{ filename: string; reason: string }>
+    uploaded_count: number
+    skipped_count: number
+  }> => {
+    const response = await fetch(`${API_BASE}/resume-screening/library/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resumes })
+    })
+    if (!response.ok) {
+      throw new Error(`上传简历失败: ${response.status}`)
+    }
+    const result = await response.json()
+    return result.data
+  },
+
+  // 获取简历详情
+  getDetail: async (resumeId: string): Promise<LibraryResume> => {
+    const response = await fetch(`${API_BASE}/resume-screening/library/${resumeId}/`)
+    if (!response.ok) {
+      throw new Error(`获取简历详情失败: ${response.status}`)
+    }
+    const result = await response.json()
+    return result.data
+  },
+
+  // 更新简历信息
+  update: async (resumeId: string, data: {
+    candidate_name?: string
+    notes?: string
+  }): Promise<void> => {
+    const response = await fetch(`${API_BASE}/resume-screening/library/${resumeId}/`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    })
+    if (!response.ok) {
+      throw new Error(`更新简历失败: ${response.status}`)
+    }
+  },
+
+  // 删除简历
+  delete: async (resumeId: string): Promise<void> => {
+    const response = await fetch(`${API_BASE}/resume-screening/library/${resumeId}/`, {
+      method: 'DELETE'
+    })
+    if (!response.ok) {
+      throw new Error(`删除简历失败: ${response.status}`)
+    }
+  },
+
+  // 批量删除简历
+  batchDelete: async (resumeIds: string[]): Promise<void> => {
+    const response = await fetch(`${API_BASE}/resume-screening/library/batch-delete/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resume_ids: resumeIds })
+    })
+    if (!response.ok) {
+      throw new Error(`批量删除失败: ${response.status}`)
+    }
+  },
+
+  // 检查哈希值是否已存在
+  checkHashes: async (hashes: string[]): Promise<{ exists: Record<string, boolean>; existing_count: number }> => {
+    const response = await fetch(`${API_BASE}/resume-screening/library/check-hash/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hashes })
+    })
+    if (!response.ok) {
+      throw new Error(`检查哈希值失败: ${response.status}`)
+    }
+    const result = await response.json()
+    return result.data
+  }
+}
+
+// 简历库类型定义
+export interface LibraryResume {
+  id: string
+  filename: string
+  file_hash: string
+  file_size: number
+  file_type: string
+  content?: string
+  content_preview?: string
+  candidate_name: string | null
+  is_screened: boolean
+  is_assigned: boolean
+  notes: string | null
+  created_at: string
+  updated_at?: string
+}
+
 export { apiClient }

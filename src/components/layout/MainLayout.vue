@@ -28,6 +28,7 @@ const route = useRoute()
 const pageTitles: Record<string, string> = {
   '/': '仪表盘',
   '/positions': '岗位设置',
+  '/library': '简历库',
   '/screening': '简历筛选',
   '/video': '视频分析',
   '/interview': '面试辅助',

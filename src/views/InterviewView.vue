@@ -187,10 +187,9 @@ const handleStartLive = () => {
   startInterview()
 }
 
-// 切换录音状态
-const toggleRecording = () => {
-  isRecording.value = !isRecording.value
-  // 这里可以添加实际的语音识别逻辑
+// 切换录音状态（由子组件控制，这里只同步状态）
+const toggleRecording = (recording: boolean) => {
+  isRecording.value = recording
 }
 
 // 计时器更新

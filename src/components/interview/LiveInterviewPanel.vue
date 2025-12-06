@@ -298,9 +298,12 @@
               <div class="input-label">
                 <el-icon><Microphone /></el-icon>
                 候选人回答
-                <el-tag v-if="isRecording" type="danger" size="small" effect="plain">
+                <el-tag v-if="isSpeechListening" type="danger" size="small" effect="plain" class="recording-tag">
                   <span class="rec-dot"></span>
                   录音中
+                </el-tag>
+                <el-tag v-if="!speechSupported" type="warning" size="small">
+                  浏览器不支持语音
                 </el-tag>
               </div>
               <div class="input-row">
@@ -308,18 +311,23 @@
                   v-model="answerInput"
                   type="textarea"
                   :rows="3"
-                  placeholder="输入候选人的回答内容，或点击麦克风使用语音输入..."
+                  :placeholder="isSpeechListening ? '正在录音，请对着麦克风说话...' : '输入候选人的回答内容，或点击麦克风使用语音输入...'"
                   :disabled="isPaused"
+                  :class="{ 'recording-active': isSpeechListening }"
                 />
                 <div class="input-actions">
-                  <el-button
-                    :type="isRecording ? 'danger' : 'default'"
-                    circle
-                    size="large"
-                    :icon="isRecording ? VideoPause : Microphone"
-                    @click="toggleRecording"
-                    class="mic-btn"
-                  />
+                  <el-tooltip :content="speechSupported ? (isSpeechListening ? '停止录音' : '开始语音输入') : '您的浏览器不支持语音识别'" placement="top">
+                    <el-button
+                      :type="isSpeechListening ? 'danger' : 'default'"
+                      circle
+                      size="large"
+                      :icon="isSpeechListening ? VideoPause : Microphone"
+                      @click="toggleRecording"
+                      class="mic-btn"
+                      :class="{ 'recording': isSpeechListening }"
+                      :disabled="!speechSupported"
+                    />
+                  </el-tooltip>
                   <el-button
                     type="success"
                     :icon="Check"
@@ -360,13 +368,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, reactive, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, reactive, onMounted, onUnmounted } from 'vue'
 import {
   Microphone, VideoPlay, VideoPause, Close, Download, Check,
   QuestionFilled, ChatLineRound, Timer, Grid, Edit, Promotion, User, Warning
 } from '@element-plus/icons-vue'
 import QuestionSuggestion from './QuestionSuggestion.vue'
 import type { Message, SuggestedQuestion, InterviewConfig } from '@/composables/useInterviewAssist'
+import { useSpeechRecognition } from '@/composables/useSpeechRecognition'
 import type { PositionData, ResumeData } from '@/types'
 import { positionApi } from '@/api'
 
@@ -396,7 +405,7 @@ const emit = defineEmits<{
   useSuggestion: [suggestion: SuggestedQuestion]
   clearSuggestions: []
   updateConfig: [config: Partial<InterviewConfig>]
-  toggleRecording: []
+  toggleRecording: [isRecording: boolean]
   selectCandidate: [candidate: { name: string; position: string; resumeId: string }]
 }>()
 
@@ -434,6 +443,34 @@ const chatContainerRef = ref<HTMLElement | null>(null)
 
 // 倒计时
 const suggestionCountdown = ref(0)
+
+// 语音识别相关
+const recognizedTextBeforeStart = ref('') // 记录开始录音前输入框的内容
+
+// 初始化语音识别
+const {
+  isSupported: speechSupported,
+  isListening: isSpeechListening,
+  transcript: speechTranscript,
+  interimTranscript: speechInterim,
+  finalTranscript: speechFinal,
+  error: speechError,
+  start: startSpeech,
+  stop: stopSpeech,
+  reset: resetSpeech
+} = useSpeechRecognition({
+  lang: 'zh-CN',
+  continuous: true,
+  interimResults: true
+})
+
+// 监听语音识别结果，实时更新输入框
+watch([speechFinal, speechInterim], ([final, interim]) => {
+  if (isSpeechListening.value) {
+    // 组合：录音前的文字 + 最终确认的文字 + 临时文字
+    answerInput.value = recognizedTextBeforeStart.value + final + interim
+  }
+})
 
 // 加载岗位列表
 const loadPositions = async () => {
@@ -556,13 +593,34 @@ const sendQuestion = () => {
 
 const submitAnswer = () => {
   if (answerInput.value.trim()) {
+    // 如果正在录音，先停止
+    if (isSpeechListening.value) {
+      stopSpeech()
+    }
     emit('submit', answerInput.value.trim())
     answerInput.value = ''
+    // 重置语音识别状态
+    resetSpeech()
+    recognizedTextBeforeStart.value = ''
   }
 }
 
-const toggleRecording = () => {
-  emit('toggleRecording')
+const toggleRecording = async () => {
+  if (isSpeechListening.value) {
+    // 停止录音
+    stopSpeech()
+    emit('toggleRecording', false)
+  } else {
+    // 开始录音前，保存当前输入框内容
+    recognizedTextBeforeStart.value = answerInput.value
+    // 重置语音识别的累积文本
+    resetSpeech()
+    // 开始录音
+    const success = await startSpeech()
+    if (success) {
+      emit('toggleRecording', true)
+    }
+  }
 }
 
 const handleUseSuggestion = (suggestion: SuggestedQuestion) => {
@@ -1119,10 +1177,56 @@ watch(() => props.messages.length, () => {
         .mic-btn {
           width: 48px;
           height: 48px;
+          transition: all 0.3s ease;
+          
+          &.recording {
+            animation: pulse-recording 1.5s infinite;
+            box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.3);
+          }
+        }
+      }
+      
+      // 录音时的输入框样式
+      :deep(.recording-active) {
+        .el-textarea__inner {
+          border-color: #ef4444 !important;
+          box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15) !important;
+          animation: border-pulse 2s infinite;
         }
       }
     }
   }
+  
+  .recording-tag {
+    animation: tag-pulse 1s infinite;
+  }
+}
+
+@keyframes pulse-recording {
+  0%, 100% { 
+    transform: scale(1);
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.3);
+  }
+  50% { 
+    transform: scale(1.05);
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0.15);
+  }
+}
+
+@keyframes border-pulse {
+  0%, 100% { 
+    border-color: #ef4444;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+  }
+  50% { 
+    border-color: #f87171;
+    box-shadow: 0 0 0 5px rgba(239, 68, 68, 0.1);
+  }
+}
+
+@keyframes tag-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
 }
 
 .suggestion-section {

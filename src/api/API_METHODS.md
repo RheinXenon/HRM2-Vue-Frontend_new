@@ -113,10 +113,10 @@
   - 说明: 通过请求第一页获取总量统计（后端返回 `total` 字段）。
 
 - `getResumeDetail(resumeId: string)`
-  - 方法: GET（实现中带有 try/catch，可能请求不同路径以兼容）
-  - 路径: 典型为 `/resume-screening/data/{resumeId}/` 或类似路径
+  - 方法: GET
+  - 路径: `/resume-screening/reports/{resumeId}/detail/`
   - 返回: `ResumeData | null`
-  - 说明: 获取单条简历的完整详情，失败时返回 `null`。
+  - 说明: 获取单条简历的完整详情（含评分报告），失败时返回 `null`。返回字段会进行映射：`scores` → `screening_score`，`summary` → `screening_summary`。
 
 - `getGroups(params?: { include_resumes?: boolean })`
   - 方法: GET
@@ -201,11 +201,14 @@
   - 返回: `InterviewEvaluationTask | null`
 
 - `stopEvaluation(taskId: string)`
-  - 方法: （实现中为停止/删除任务）
-  - 说明: 停止或删除评估任务，具体后端路径在实现中可能为 `.../{taskId}/stop/` 或 `.../{taskId}/` 的 DELETE，请参照后端文档或源码。
+  - 方法: DELETE
+  - 路径: `/final-recommend/interview-evaluation/{taskId}/delete/`
+  - 返回: void
+  - 说明: 停止并删除评估任务。
 
 - `downloadReport(filePath: string)`
-  - 方法: GET（或由后端暴露的下载接口）
+  - 方法: GET
+  - 路径: `/final-recommend/download-report/{filePath}`
   - 返回: `Blob`
   - 说明: 用于下载最终推荐/面试评估相关的报告文件。
 
@@ -247,7 +250,8 @@
 
 - `checkHashes(hashes: string[])`
   - 方法: POST
-  - 路径: `/resume-screening/library/check-hashes/`
+  - 路径: `/resume-screening/library/check-hash/`
+  - 参数: `{ hashes: string[] }`
   - 返回: `{ exists: Record<string, boolean>, existing_count: number }`
   - 说明: 用于上传前去重检测。
 
@@ -257,9 +261,95 @@
 
 - `generateResumes(params: { position: {...}, count: number })`
   - 方法: POST
-  - 路径: 开发工具相关端点（实现中具体路径省略）
-  - 返回: 生成结果汇总（已添加、已跳过、计数等）
-  - 说明: 用于测试时批量自动生成简历数据。
+  - 路径: `/resume-screening/dev/generate-resumes/`
+  - 参数:
+    ```json
+    {
+      "position": {
+        "position": "string",
+        "description": "string?",
+        "required_skills": "string[]?",
+        "optional_skills": "string[]?",
+        "min_experience": "number?",
+        "education": "string[]?"
+      },
+      "count": "number"
+    }
+    ```
+  - 返回: `{ added: [...], skipped: [...], added_count, skipped_count, requested_count }`
+  - 说明: 用于测试时批量自动生成简历数据并添加到简历库。
+
+---
+
+## `interviewAssistApi`（面试辅助，后端路径: `/interview-assist/`）
+
+- `createSession(data: { resume_data_id: string, job_config?: object })`
+  - 方法: POST
+  - 路径: `/interview-assist/sessions/`
+  - 参数: `{ resume_data_id: string, job_config?: Record<string, unknown> }`
+  - 返回: `InterviewSession`
+  - 说明: 根据简历数据创建面试会话，返回会话信息（含 `session_id`、候选人信息、岗位信息等）。
+
+- `getSession(sessionId: string)`
+  - 方法: GET
+  - 路径: `/interview-assist/sessions/{sessionId}/`
+  - 返回: `InterviewSession`
+  - 说明: 获取面试会话详情，包含当前轮次、问答计数、是否完成等状态。
+
+- `endSession(sessionId: string)`
+  - 方法: DELETE
+  - 路径: `/interview-assist/sessions/{sessionId}/`
+  - 返回: void
+  - 说明: 结束并删除面试会话。
+
+- `generateQuestions(sessionId: string, params?: {...})`
+  - 方法: POST
+  - 路径: `/interview-assist/sessions/{sessionId}/generate-questions/`
+  - 参数（可选）:
+    ```json
+    {
+      "categories": "string[]?",
+      "candidate_level": "string?",
+      "count_per_category": "number?",
+      "focus_on_resume": "boolean?",
+      "interest_point_count": "number? (1-3)"
+    }
+    ```
+  - 返回: `{ question_pool: InterviewQuestion[], resume_highlights: string[], interest_points?: [...] }`
+  - 说明: AI 生成面试问题池，可根据分类、候选人级别等参数定制。`interest_points` 包含简历中的兴趣点及对应问题。
+
+- `recordQA(sessionId: string, data: {...})`
+  - 方法: POST
+  - 路径: `/interview-assist/sessions/{sessionId}/record-qa/`
+  - 参数:
+    ```json
+    {
+      "question": {
+        "content": "string",
+        "expected_skills": "string[]?",
+        "difficulty": "number?"
+      },
+      "answer": { "content": "string" },
+      "skip_evaluation": "boolean? (default: true)",
+      "followup_count": "number?",
+      "alternative_count": "number?"
+    }
+    ```
+  - 返回: `{ round_number, evaluation: AnswerEvaluation | null, candidate_questions: CandidateQuestion[], hr_action_hints: string[] }`
+  - 说明: 记录一轮问答并生成候选提问。当 `skip_evaluation` 为 `false` 时，返回 `evaluation` 评估结果；默认跳过评估以加快响应。`candidate_questions` 为 LLM 生成的下一步候选问题。
+
+- `generateReport(sessionId: string, params?: {...})`
+  - 方法: POST
+  - 路径: `/interview-assist/sessions/{sessionId}/generate-report/`
+  - 参数（可选）:
+    ```json
+    {
+      "include_conversation_log": "boolean?",
+      "hr_notes": "string?"
+    }
+    ```
+  - 返回: `{ report: InterviewReport, report_file_url: string | null }`
+  - 说明: 生成面试最终报告，包含整体评估、维度分析、技能评估、亮点、红旗等。
 
 ---
 
@@ -277,6 +367,103 @@
 
 ---
 
-如果你需要，我可以：
-- 把这个文件改成 README 风格并加入示例请求（curl / fetch / axios）。
-- 或者从 `src/api/index.ts` 自动提取并生成更精确的请求示例。
+## 类型定义
+
+### `LibraryResume`（简历库简历）
+```typescript
+interface LibraryResume {
+  id: string
+  filename: string
+  file_hash: string
+  file_size: number
+  file_type: string
+  content?: string
+  content_preview?: string
+  candidate_name: string | null
+  is_screened: boolean
+  is_assigned: boolean
+  notes: string | null
+  created_at: string
+  updated_at?: string
+}
+```
+
+### `InterviewSession`（面试会话）
+```typescript
+interface InterviewSession {
+  session_id: string
+  candidate_name: string
+  position_title: string
+  current_round: number
+  qa_count?: number
+  is_completed: boolean
+  created_at: string
+  updated_at?: string
+  resume_summary?: {
+    candidate_name: string
+    position_title: string
+    screening_score?: number
+    screening_summary?: string
+  }
+  has_final_report?: boolean
+  final_report_summary?: string
+}
+```
+
+### `InterviewQuestion`（面试问题）
+```typescript
+interface InterviewQuestion {
+  question: string
+  category: string
+  difficulty: number
+  expected_skills: string[]
+  source: 'resume_based' | 'skill_based' | 'hr_custom'
+  related_point?: string
+}
+```
+
+### `AnswerEvaluation`（回答评估）
+```typescript
+interface AnswerEvaluation {
+  normalized_score: number
+  dimension_scores: {
+    technical_depth: number
+    practical_experience: number
+    answer_specificity: number
+    logical_clarity: number
+    honesty: number
+    communication: number
+  }
+  confidence_level: 'genuine' | 'uncertain' | 'overconfident'
+  should_followup: boolean
+  followup_reason?: string
+  feedback: string
+}
+```
+
+### `CandidateQuestion`（候选问题）
+```typescript
+interface CandidateQuestion {
+  question: string
+  purpose: string
+  expected_skills: string[]
+  source: 'followup' | 'resume' | 'job'
+}
+```
+
+### `InterviewReport`（面试报告）
+```typescript
+interface InterviewReport {
+  overall_assessment: {
+    recommendation_score: number
+    recommendation: string
+    summary: string
+  }
+  dimension_analysis: Record<string, { score: number; comment: string }>
+  skill_assessment: Array<{ skill: string; level: string; evidence: string }>
+  highlights: string[]
+  red_flags: string[]
+  overconfidence_detected: boolean
+  suggested_next_steps: string[]
+}
+```

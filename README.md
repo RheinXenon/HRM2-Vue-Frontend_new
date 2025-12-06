@@ -2,6 +2,50 @@
 
 本项目是 HRM2 招聘管理系统的前端界面，基于 **Vue 3 + Vite + TypeScript + Element Plus** 实现，主要用于配合后端（Django）完成招聘流程的可视化管理与操作。
 
+## 技术栈
+
+| 层级 | 技术 |
+| ---- | ---- |
+| 框架 | Vue 3.5 + Vue Router 4 + Pinia 3 |
+| 构建 | Vite 7 + TypeScript 5 |
+| UI 组件 | Element Plus 2.11 |
+| 图表 | ECharts 6 |
+| 文件解析 | pdfjs-dist（PDF）、mammoth（Word） |
+| Markdown | marked + highlight.js |
+| HTTP | axios |
+| Node | ^20.19.0 \|\| >=22.12.0 |
+
+## 快速开始
+
+### 1. 安装依赖
+
+```bash
+npm install
+```
+
+### 2. 配置后端 API 地址
+
+编辑 `vite.config.ts` 或创建 `.env.local` 文件：
+
+```env
+VITE_API_BASE=http://localhost:8000
+```
+
+### 3. 启动开发服务器
+
+```bash
+npm run dev
+```
+
+访问 `http://localhost:5173`
+
+### 4. 构建生产版本
+
+```bash
+npm run build
+npm run preview  # 预览构建结果
+```
+
 ## 项目结构
 
 ```text
@@ -16,8 +60,9 @@ HRM2-Vue-Frontend_new/
       ├─ App.vue             # 根组件，承载主布局
       ├─ router/             # 前端路由配置（如仪表盘、岗位设置、简历库等）
       │   └─ index.ts
-      ├─ api/                # 与后端交互的 API 封装（axios 请求）
-      │   └─ index.ts
+      ├─ api/                # 与后端交互的 API 封装
+      │   ├─ index.ts         # API 方法实现（axios + fetch）
+      │   └─ API_METHODS.md   # API 接口文档
       ├─ stores/             # Pinia 状态管理（全局状态、配置等）
       ├─ types/              # TypeScript 类型定义（岗位、简历、任务等业务类型）
       ├─ utils/              # 通用工具函数（预留/复用逻辑）
@@ -29,7 +74,7 @@ HRM2-Vue-Frontend_new/
       │   ├─ library/        # 简历库相关组件（上传、详情对话框等）
       │   ├─ screening/      # 简历筛选流程组件（上传区、任务队列、历史任务等）
       │   ├─ video/          # 视频分析相关组件（候选人列表、上传对话框等）
-      │   ├─ interview/      # 面试辅助相关组件（问题列表、候选人选择等）
+      │   ├─ interview/      # 面试辅助组件（设置面板、问题建议、对话面板、AI 模拟等）
       │   ├─ recommend/      # 最终推荐结果展示与控制组件
       │   └─ dev-tools/      # 开发测试工具组件（如随机简历生成器）
       ├─ composables/        # 组合式函数（业务逻辑拆分）
@@ -40,12 +85,14 @@ HRM2-Vue-Frontend_new/
       │   ├─ useHistoryTasks.ts        # 筛选任务历史查询与分页
       │   ├─ useTaskPolling.ts         # 筛选任务轮询与队列管理
       │   ├─ useVideoUpload.ts         # 视频文件上传逻辑
+      │   ├─ useInterviewAssist.ts     # 面试辅助核心逻辑（会话、问题、问答、报告）
       │   ├─ useInterviewQuestions.ts  # 面试题生成、评分与报告导出
+      │   ├─ useSpeechRecognition.ts   # 语音识别功能（Web Speech API）
       │   ├─ useRecommendAnalysis.ts   # 最终推荐分析任务管理与进度
       │   ├─ useResumeDetail.ts        # 简历详情预览、报告下载等
       │   ├─ useResumeAssignment.ts    # 简历与岗位分配/移除逻辑
       │   ├─ useScreeningUtils.ts      # 筛选流程相关通用工具
-      │   ├─ useFileParser.ts          # 本地文件解析（如简历文本解析）
+      │   ├─ useFileParser.ts          # 本地文件解析（PDF、Word、TXT）
       │   └─ useLibraryFileParser.ts   # 简历库中简历内容解析
       └─ views/             # 页面级组件，对应路由
           ├─ DashboardView.vue        # 仪表盘
@@ -83,14 +130,16 @@ HRM2-Vue-Frontend_new/
   - 规划用于上传候选人视频并进行 AI 分析
   - 当前页面结构和交互已搭建，部分后端分析逻辑仍在完善中
 
-- **面试辅助系统（功能待补全）**：
-  - 规划用于基于岗位和候选人简历自动生成面试问题
-  - 记录候选人回答和评分，生成面试总结报告
-  - 部分 AI 相关逻辑仍在完善中
+- **面试辅助系统**：
+  - 支持创建面试会话，选择候选人简历
+  - AI 自动生成问题池（含简历兴趣点分析）
+  - 实时记录问答，生成候选提问建议
+  - 支持语音识别输入（Web Speech API）
+  - 生成面试最终报告（含维度分析、亮点、红旗等）
 
-- **最终录用推荐系统（功能待补全）**：
-  - 规划根据多维度评分结果（初筛、视频分析、面试等）综合给出录用建议
-  - 当前已有基础页面与任务管理逻辑，实际推荐策略仍在迭代
+- **最终录用推荐系统（还需继续优化和前端改进）**：
+  - 汇总多维度评分结果（初筛、视频分析、面试等）综合给出录用建议
+  - 支持评估任务创建、状态查询、报告下载
 
 - **开发测试工具**：
   - 提供开发环境下的测试数据生成工具（如随机简历生成）
@@ -125,14 +174,21 @@ HRM2-Vue-Frontend_new/
 
   ![视频分析（功能待补全）](./info_images/%E8%A7%86%E9%A2%91%E5%88%86%E6%9E%90%EF%BC%88%E5%8A%9F%E8%83%BD%E5%BE%85%E8%A1%A5%E5%85%A8%EF%BC%89.png)
 
-- **面试辅助系统（功能待补全）**
+- **面试辅助系统**
 
-  ![面试辅助系统（功能待补全）](./info_images/%E9%9D%A2%E8%AF%95%E8%BE%85%E5%8A%A9%E7%B3%BB%E7%BB%9F%EF%BC%88%E5%8A%9F%E8%83%BD%E5%BE%85%E8%A1%A5%E5%85%A8%EF%BC%89.png)
+  ![面试辅助系统](./info_images/%E9%9D%A2%E8%AF%95%E8%BE%85%E5%8A%A9%E7%B3%BB%E7%BB%9F%EF%BC%88%E5%8A%9F%E8%83%BD%E5%BE%85%E8%A1%A5%E5%85%A8%EF%BC%89.png)
 
-- **最终录用推荐系统（功能待补全）**
+- **最终录用推荐系统**
 
-  ![最终录用推荐系统（功能待补全）](./info_images/%E6%9C%80%E7%BB%88%E5%BD%95%E7%94%A8%E6%8E%A8%E8%8D%90%E7%B3%BB%E7%BB%9F%EF%BC%88%E5%8A%9F%E8%83%BD%E5%BE%85%E8%A1%A5%E5%85%A8%EF%BC%89.png)
+  ![最终录用推荐系统](./info_images/%E6%9C%80%E7%BB%88%E5%BD%95%E7%94%A8%E6%8E%A8%E8%8D%90%E7%B3%BB%E7%BB%9F%EF%BC%88%E5%8A%9F%E8%83%BD%E5%BE%85%E8%A1%A5%E5%85%A8%EF%BC%89.png)
 
 - **开发测试工具**
 
   ![开发测试工具](./info_images/%E5%BC%80%E5%8F%91%E6%B5%8B%E8%AF%95%E5%B7%A5%E5%85%B7.png)
+
+---
+
+## API 文档
+
+前端 API 封装详见 [`src/api/API_METHODS.md`](./src/api/API_METHODS.md)，包含所有后端接口的路径、参数、返回值说明。
+

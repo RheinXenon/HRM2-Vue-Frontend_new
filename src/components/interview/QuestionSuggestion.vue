@@ -28,8 +28,8 @@
     <!-- 问题列表 -->
     <transition name="fade" mode="out-in">
       <div v-if="loading || waitingForAnswer" class="loading-state" key="loading">
-        <div class="loading-icon">
-          <el-icon class="is-loading"><Promotion /></el-icon>
+        <div class="loading-icon" :class="{ 'waiting': waitingForAnswer }">
+          <el-icon :class="{ 'is-loading': !waitingForAnswer }"><Promotion /></el-icon>
         </div>
         <h4>{{ waitingForAnswer ? '等待候选人回复...' : '正在生成问题...' }}</h4>
         <p>{{ waitingForAnswer ? '面试官已提问，请等待候选人回答' : 'AI 正在分析回答并生成追问建议，请稍候' }}</p>

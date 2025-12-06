@@ -89,7 +89,8 @@
           @start="handleStartLive"
           @pause="pauseInterview"
           @resume="resumeInterview"
-          @end="endInterview"
+          @quit="quitInterview"
+          @end-and-save="endAndSaveInterview"
           @export="exportRecord"
           @ask="askQuestion"
           @submit="submitAnswer"
@@ -165,6 +166,8 @@ const {
   startInterview,
   pauseInterview,
   resumeInterview,
+  quitInterview,
+  endAndSaveInterview,
   endInterview,
   askQuestion,
   submitAnswer,

@@ -54,7 +54,8 @@
         :is-paused="isPaused"
         @pause="$emit('pause')"
         @resume="$emit('resume')"
-        @end="$emit('end')"
+        @quit="$emit('quit')"
+        @end-and-save="$emit('endAndSave')"
         @export="$emit('export')"
       />
     </div>
@@ -95,7 +96,8 @@ const emit = defineEmits<{
   start: []
   pause: []
   resume: []
-  end: []
+  quit: []        // 放弃面试（不保存）
+  endAndSave: []  // 结束并保存（生成报告）
   export: []
   ask: [question: string]
   submit: [answer: string]

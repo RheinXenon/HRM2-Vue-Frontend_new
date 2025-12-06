@@ -701,10 +701,49 @@ export function useInterviewAssist() {
     ElMessage.info('面试继续')
   }
 
-  // 结束面试
-  const endInterview = async () => {
-    // 结束后端会话
+  // 放弃面试（不保存，不生成报告）
+  const quitInterview = async () => {
+    // 结束后端会话（不生成报告）
     if (sessionId.value && useBackendApi.value) {
+      try {
+        await interviewAssistApi.endSession(sessionId.value)
+      } catch (error) {
+        console.error('结束会话失败:', error)
+      }
+    }
+
+    // 重置状态
+    isInterviewActive.value = false
+    isPaused.value = false
+    sessionId.value = null
+    questionPool.value = []
+    messages.value = []
+    suggestedQuestions.value = []
+    showSuggestions.value = false
+    
+    ElMessage.warning('面试已放弃')
+  }
+
+  // 结束面试并保存（生成报告）
+  const endAndSaveInterview = async () => {
+    // 计算持续时间
+    if (stats.startTime) {
+      stats.duration = Math.round((Date.now() - stats.startTime.getTime()) / 1000 / 60)
+    }
+    
+    addMessage('system', `面试已结束。共进行了 ${stats.totalQuestions} 个问题，${stats.totalFollowups} 次追问，用时 ${stats.duration} 分钟。`)
+    
+    // 生成报告
+    if (sessionId.value && useBackendApi.value) {
+      ElMessage.info('正在生成面试报告...')
+      const result = await generateReport()
+      if (result.success) {
+        ElMessage.success('面试报告已生成')
+      } else {
+        ElMessage.warning('面试已结束，但报告生成失败')
+      }
+      
+      // 结束会话
       try {
         await interviewAssistApi.endSession(sessionId.value)
       } catch (error) {
@@ -715,19 +754,15 @@ export function useInterviewAssist() {
     isInterviewActive.value = false
     isPaused.value = false
     
-    // 计算持续时间
-    if (stats.startTime) {
-      stats.duration = Math.round((Date.now() - stats.startTime.getTime()) / 1000 / 60)
-    }
-    
-    addMessage('system', `面试已结束。共进行了 ${stats.totalQuestions} 个问题，${stats.totalFollowups} 次追问，用时 ${stats.duration} 分钟。`)
-    
     // 清理会话状态
     sessionId.value = null
     questionPool.value = []
     
-    ElMessage.success('面试已结束')
+    ElMessage.success('面试已结束并保存')
   }
+
+  // 兼容旧代码：endInterview 映射到 endAndSaveInterview
+  const endInterview = endAndSaveInterview
 
   // 生成最终报告
   const generateReport = async (hrNotes?: string): Promise<{ success: boolean; reportUrl?: string }> => {
@@ -926,7 +961,9 @@ export function useInterviewAssist() {
     startLiveInterviewWithResume,
     pauseInterview,
     resumeInterview,
-    endInterview,
+    quitInterview,
+    endAndSaveInterview,
+    endInterview,  // 兼容旧代码
     generateReport,
     askQuestion,
     askFromPool,

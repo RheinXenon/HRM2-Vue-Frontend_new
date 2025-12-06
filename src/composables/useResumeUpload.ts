@@ -38,9 +38,34 @@ export function useResumeUpload(
 
     isSubmitting.value = true
     let successCount = 0
+    let libraryUploadedCount = 0
     
     try {
-      // 1. 提交上传的文件
+      // 1. 提交上传的文件到简历库
+      if (parsedFiles.length > 0) {
+        try {
+          const libraryUploadData = parsedFiles.map(file => ({
+            name: file.name,
+            content: file.content || '',
+            metadata: {
+              size: file.file.size,
+              type: file.file.type || 'text/plain'
+            }
+          }));
+
+          const libraryResult = await libraryApi.upload(libraryUploadData);
+          libraryUploadedCount = libraryResult.uploaded_count;
+          
+          if (libraryResult.skipped_count > 0) {
+            ElMessage.warning(`${libraryResult.skipped_count} 份简历已存在于简历库中`);
+          }
+        } catch (err) {
+          console.error('上传到简历库失败:', err);
+          ElMessage.error('部分简历上传到简历库失败');
+        }
+      }
+
+      // 2. 提交上传的文件进行筛选
       for (const file of parsedFiles) {
         try {
           const uploadData = {
@@ -74,7 +99,7 @@ export function useResumeUpload(
         }
       }
 
-      // 2. 提交从简历库选择的文件
+      // 3. 提交从简历库选择的文件
       for (const libFile of selectedLibraryFiles) {
         try {
           // 获取简历库文件的详细内容
@@ -113,7 +138,8 @@ export function useResumeUpload(
 
       if (successCount > 0) {
         clearCallback?.()
-        ElMessage.success(`成功提交 ${successCount} 份简历进行初筛`)
+        ElMessage.success(`成功提交 ${successCount} 份简历进行初筛` + 
+                         (libraryUploadedCount > 0 ? `，其中 ${libraryUploadedCount} 份已保存到简历库` : ''));
       }
     } catch (err) {
       console.error('提交失败:', err)

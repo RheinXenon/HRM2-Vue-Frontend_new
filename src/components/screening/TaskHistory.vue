@@ -58,6 +58,9 @@
             <el-tag type="warning" size="small" effect="plain">
               技术: {{ getHistoryTaskScore(task)?.technical_score }}
             </el-tag>
+            <el-tag size="small" effect="plain">
+              管理: {{ getHistoryTaskScore(task)?.manager_score }}
+            </el-tag>
           </div>
         </div>
         <div class="history-actions">

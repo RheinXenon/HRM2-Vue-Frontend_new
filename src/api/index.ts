@@ -678,4 +678,201 @@ export const devToolsApi = {
   }
 }
 
+/**
+ * 面试辅助 API
+ * 后端路径: /interview-assist/
+ */
+export const interviewAssistApi = {
+  // 创建面试会话
+  createSession: async (data: {
+    resume_data_id: string
+    interviewer_name?: string
+    job_config?: Record<string, unknown>
+    company_config?: Record<string, unknown>
+  }): Promise<InterviewSession> => {
+    const response = await fetch(`${API_BASE}/interview-assist/sessions/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    })
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}))
+      throw new Error(error.message || `创建会话失败: ${response.status}`)
+    }
+    const result = await response.json()
+    return result.data
+  },
+
+  // 获取会话详情
+  getSession: async (sessionId: string): Promise<InterviewSession> => {
+    const response = await fetch(`${API_BASE}/interview-assist/sessions/${sessionId}/`)
+    if (!response.ok) {
+      throw new Error(`获取会话失败: ${response.status}`)
+    }
+    const result = await response.json()
+    return result.data
+  },
+
+  // 结束会话
+  endSession: async (sessionId: string): Promise<void> => {
+    const response = await fetch(`${API_BASE}/interview-assist/sessions/${sessionId}/`, {
+      method: 'DELETE'
+    })
+    if (!response.ok) {
+      throw new Error(`结束会话失败: ${response.status}`)
+    }
+  },
+
+  // 生成面试问题
+  generateQuestions: async (sessionId: string, params?: {
+    categories?: string[]
+    candidate_level?: string
+    count_per_category?: number
+    focus_on_resume?: boolean
+  }): Promise<{
+    question_pool: InterviewQuestion[]
+    resume_highlights: string[]
+  }> => {
+    const response = await fetch(`${API_BASE}/interview-assist/sessions/${sessionId}/generate-questions/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params || {})
+    })
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}))
+      throw new Error(error.message || `生成问题失败: ${response.status}`)
+    }
+    const result = await response.json()
+    return result.data
+  },
+
+  // 记录问答并获取评估
+  recordQA: async (sessionId: string, data: {
+    question: {
+      content: string
+      source?: string
+      category?: string
+      expected_skills?: string[]
+      difficulty?: number
+      interest_point?: string
+    }
+    answer: {
+      content: string
+      duration_seconds?: number
+    }
+  }): Promise<{
+    round_number: number
+    qa_record_id: string
+    evaluation: AnswerEvaluation
+    followup_recommendation: {
+      should_followup: boolean
+      reason: string
+      suggested_followups: FollowupSuggestion[]
+      hr_hint?: string
+    }
+    hr_action_hints: string[]
+  }> => {
+    const response = await fetch(`${API_BASE}/interview-assist/sessions/${sessionId}/record-qa/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    })
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}))
+      throw new Error(error.message || `记录问答失败: ${response.status}`)
+    }
+    const result = await response.json()
+    return result.data
+  },
+
+  // 生成最终报告
+  generateReport: async (sessionId: string, params?: {
+    include_conversation_log?: boolean
+    hr_notes?: string
+  }): Promise<{
+    report: InterviewReport
+    report_file_url: string | null
+  }> => {
+    const response = await fetch(`${API_BASE}/interview-assist/sessions/${sessionId}/generate-report/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params || {})
+    })
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}))
+      throw new Error(error.message || `生成报告失败: ${response.status}`)
+    }
+    const result = await response.json()
+    return result.data
+  }
+}
+
+// 面试辅助类型定义
+export interface InterviewSession {
+  session_id: string
+  candidate_name: string
+  position_title: string
+  interviewer_name?: string
+  status: 'active' | 'completed'
+  current_round: number
+  qa_count?: number
+  question_pool_count?: number
+  resume_highlights?: string[]
+  created_at: string
+  updated_at?: string
+  resume_summary?: {
+    candidate_name: string
+    position_title: string
+    screening_score?: number
+    screening_summary?: string
+  }
+  has_final_report?: boolean
+  final_report_summary?: string
+}
+
+export interface InterviewQuestion {
+  question: string
+  category: string
+  difficulty: number
+  expected_skills: string[]
+  source: 'resume_based' | 'skill_based' | 'hr_custom'
+  related_point?: string
+}
+
+export interface AnswerEvaluation {
+  normalized_score: number
+  dimension_scores: {
+    technical_depth: number
+    practical_experience: number
+    answer_specificity: number
+    logical_clarity: number
+    honesty: number
+    communication: number
+  }
+  confidence_level: 'genuine' | 'uncertain' | 'overconfident'
+  should_followup: boolean
+  followup_reason?: string
+  feedback: string
+}
+
+export interface FollowupSuggestion {
+  question: string
+  purpose: string
+  difficulty: number
+}
+
+export interface InterviewReport {
+  overall_assessment: {
+    recommendation_score: number
+    recommendation: string
+    summary: string
+  }
+  dimension_analysis: Record<string, { score: number; comment: string }>
+  skill_assessment: Array<{ skill: string; level: string; evidence: string }>
+  highlights: string[]
+  red_flags: string[]
+  overconfidence_detected: boolean
+  suggested_next_steps: string[]
+}
+
 export { apiClient }

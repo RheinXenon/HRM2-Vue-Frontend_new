@@ -1,9 +1,15 @@
 /**
  * 面试辅助系统核心 composable
  * 支持 AI 模拟面试和真人实时语音面试两种模式
+ * 
+ * 模式说明：
+ * - AI 模拟演示：使用本地模拟的候选人回答，主要用于演示系统功能
+ * - 真人实时面试：调用后端 API 进行真实的 LLM 评估和问题推荐
  */
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
+import { interviewAssistApi } from '@/api'
+import type { AnswerEvaluation, InterviewQuestion, FollowupSuggestion } from '@/api'
 
 // 类型定义
 export interface Message {
@@ -169,11 +175,19 @@ export function useInterviewAssist() {
     suggestionDelay: 10000 // 10秒
   })
 
+  // 会话状态（后端集成）
+  const sessionId = ref<string | null>(null)
+  const resumeDataId = ref<string | null>(null)
+  const questionPool = ref<InterviewQuestion[]>([])
+  const resumeHighlights = ref<string[]>([])
+  const useBackendApi = ref(true) // 是否使用后端 API
+
   // 面试状态
   const isInterviewActive = ref(false)
   const isPaused = ref(false)
   const messages = ref<Message[]>([])
   const currentQuestion = ref('')
+  const currentQuestionData = ref<Partial<InterviewQuestion> | null>(null)
   const currentAnswer = ref('')
   const isProcessing = ref(false)
   const isRecording = ref(false)
@@ -282,9 +296,8 @@ export function useInterviewAssist() {
     }, config.suggestionDelay)
   }
 
-  // 评估回答（模拟）
-  const evaluateAnswer = (answer: string): MessageEvaluation => {
-    // 简单的评估逻辑（实际应调用后端 API）
+  // 评估回答（本地模拟 - AI演示模式使用）
+  const evaluateAnswerLocal = (answer: string): MessageEvaluation => {
     const length = answer.length
     const hasNumbers = /\d+/.test(answer)
     const hasSpecificTerms = /项目|技术|实现|优化|提升|方案|架构/.test(answer)
@@ -306,13 +319,11 @@ export function useInterviewAssist() {
     
     if (hasNumbers) score += 5
     
-    // 检测过度自信
     if (/精通|轻松|简单|没问题|都会/.test(answer) && length < 100) {
       confidenceLevel = 'overconfident'
       score -= 10
     }
     
-    // 检测不确定
     if (/可能|也许|不太确定|大概/.test(answer)) {
       confidenceLevel = 'uncertain'
     }
@@ -323,6 +334,82 @@ export function useInterviewAssist() {
       feedback: generateFeedback(recommendation),
       confidenceLevel
     }
+  }
+
+  // 评估回答（调用后端 API - 真人面试模式使用）
+  const evaluateAnswerApi = async (
+    question: string, 
+    answer: string,
+    questionData?: Partial<InterviewQuestion>
+  ): Promise<{ evaluation: MessageEvaluation; suggestions: SuggestedQuestion[]; hrHints: string[] }> => {
+    if (!sessionId.value) {
+      // 没有会话，使用本地评估
+      return {
+        evaluation: evaluateAnswerLocal(answer),
+        suggestions: generateSuggestions(question, answer),
+        hrHints: []
+      }
+    }
+
+    try {
+      const result = await interviewAssistApi.recordQA(sessionId.value, {
+        question: {
+          content: question,
+          source: questionData?.source || 'hr_custom',
+          category: questionData?.category || '',
+          expected_skills: questionData?.expected_skills || [],
+          difficulty: questionData?.difficulty || 5
+        },
+        answer: {
+          content: answer
+        }
+      })
+
+      // 转换后端评估结果为前端格式
+      const backendEval = result.evaluation
+      const score = backendEval.normalized_score
+      let recommendation: MessageEvaluation['recommendation'] = 'average'
+      if (score >= 80) recommendation = 'excellent'
+      else if (score >= 65) recommendation = 'good'
+      else if (score < 45) recommendation = 'needsImprovement'
+
+      const evaluation: MessageEvaluation = {
+        score,
+        recommendation,
+        feedback: backendEval.feedback,
+        confidenceLevel: backendEval.confidence_level
+      }
+
+      // 转换追问建议
+      const suggestions: SuggestedQuestion[] = []
+      const followups = result.followup_recommendation.suggested_followups || []
+      followups.forEach((f: FollowupSuggestion, i: number) => {
+        suggestions.push({
+          id: generateId(),
+          question: f.question,
+          type: 'followup',
+          priority: i + 1
+        })
+      })
+
+      return {
+        evaluation,
+        suggestions,
+        hrHints: result.hr_action_hints || []
+      }
+    } catch (error) {
+      console.error('后端评估失败，使用本地评估:', error)
+      return {
+        evaluation: evaluateAnswerLocal(answer),
+        suggestions: generateSuggestions(question, answer),
+        hrHints: []
+      }
+    }
+  }
+
+  // 统一的评估入口
+  const evaluateAnswer = (answer: string): MessageEvaluation => {
+    return evaluateAnswerLocal(answer)
   }
 
   // 生成反馈
@@ -351,6 +438,41 @@ export function useInterviewAssist() {
     return template.replace(/{skill}/g, skill)
   }
 
+  // 创建后端会话
+  const createSession = async (resumeId: string): Promise<boolean> => {
+    try {
+      const session = await interviewAssistApi.createSession({
+        resume_data_id: resumeId,
+        interviewer_name: '面试官'
+      })
+      sessionId.value = session.session_id
+      resumeDataId.value = resumeId
+      resumeHighlights.value = session.resume_highlights || []
+      return true
+    } catch (error) {
+      console.error('创建会话失败:', error)
+      return false
+    }
+  }
+
+  // 从后端获取问题池
+  const fetchQuestionPool = async (): Promise<void> => {
+    if (!sessionId.value) return
+
+    try {
+      const result = await interviewAssistApi.generateQuestions(sessionId.value, {
+        categories: ['简历相关', '专业能力', '行为面试'],
+        candidate_level: 'senior',
+        count_per_category: 2,
+        focus_on_resume: true
+      })
+      questionPool.value = result.question_pool
+      resumeHighlights.value = result.resume_highlights
+    } catch (error) {
+      console.error('获取问题池失败:', error)
+    }
+  }
+
   // 开始面试
   const startInterview = async (candidateType?: string) => {
     isInterviewActive.value = true
@@ -362,6 +484,9 @@ export function useInterviewAssist() {
     
     if (config.mode === 'ai-simulation' && candidateType) {
       selectedCandidate.value = candidatePresets[candidateType] || null
+      useBackendApi.value = false // AI模拟模式不使用后端
+    } else {
+      useBackendApi.value = true // 真人面试模式使用后端
     }
     
     // 开场白
@@ -371,7 +496,26 @@ export function useInterviewAssist() {
     
     addMessage('system', greeting)
     
+    // 真人面试模式：如果有会话，获取问题池
+    if (config.mode === 'live-interview' && sessionId.value) {
+      await fetchQuestionPool()
+      if (questionPool.value.length > 0) {
+        addMessage('system', `已根据简历生成 ${questionPool.value.length} 个候选问题，可从问题池中选择或自由提问。`)
+      }
+    }
+    
     ElMessage.success('面试已开始')
+  }
+
+  // 开始带简历的真人面试
+  const startLiveInterviewWithResume = async (resumeId: string): Promise<boolean> => {
+    const success = await createSession(resumeId)
+    if (success) {
+      config.mode = 'live-interview'
+      await startInterview()
+      return true
+    }
+    return false
   }
 
   // 暂停面试
@@ -390,7 +534,16 @@ export function useInterviewAssist() {
   }
 
   // 结束面试
-  const endInterview = () => {
+  const endInterview = async () => {
+    // 结束后端会话
+    if (sessionId.value && useBackendApi.value) {
+      try {
+        await interviewAssistApi.endSession(sessionId.value)
+      } catch (error) {
+        console.error('结束会话失败:', error)
+      }
+    }
+
     isInterviewActive.value = false
     isPaused.value = false
     
@@ -405,14 +558,40 @@ export function useInterviewAssist() {
     
     addMessage('system', `面试已结束。共进行了 ${stats.totalQuestions} 个问题，${stats.totalFollowups} 次追问，用时 ${stats.duration} 分钟。`)
     
+    // 清理会话状态
+    sessionId.value = null
+    questionPool.value = []
+    
     ElMessage.success('面试已结束')
   }
 
+  // 生成最终报告
+  const generateReport = async (hrNotes?: string): Promise<{ success: boolean; reportUrl?: string }> => {
+    if (!sessionId.value) {
+      return { success: false }
+    }
+
+    try {
+      const result = await interviewAssistApi.generateReport(sessionId.value, {
+        include_conversation_log: true,
+        hr_notes: hrNotes
+      })
+      return {
+        success: true,
+        reportUrl: result.report_file_url || undefined
+      }
+    } catch (error) {
+      console.error('生成报告失败:', error)
+      return { success: false }
+    }
+  }
+
   // 面试官提问
-  const askQuestion = async (question: string) => {
+  const askQuestion = async (question: string, questionData?: Partial<InterviewQuestion>) => {
     if (!isInterviewActive.value || isPaused.value) return
     
     currentQuestion.value = question
+    currentQuestionData.value = questionData || null
     showSuggestions.value = false
     stats.totalQuestions++
     
@@ -427,7 +606,7 @@ export function useInterviewAssist() {
       const message = await simulateTyping(response, 'candidate')
       
       // 评估回答
-      const evaluation = evaluateAnswer(response)
+      const evaluation = evaluateAnswerLocal(response)
       message.evaluation = evaluation
       
       isAITyping.value = false
@@ -435,6 +614,11 @@ export function useInterviewAssist() {
       // 启动问题建议计时器
       startSuggestionTimer(question, response)
     }
+  }
+
+  // 从问题池选择问题提问
+  const askFromPool = async (poolQuestion: InterviewQuestion) => {
+    await askQuestion(poolQuestion.question, poolQuestion)
   }
 
   // 处理候选人回答（真人面试模式）
@@ -445,10 +629,36 @@ export function useInterviewAssist() {
     
     const message = addMessage('candidate', answer)
     
-    // 评估回答
-    await new Promise(resolve => setTimeout(resolve, 500))
-    const evaluation = evaluateAnswer(answer)
-    message.evaluation = evaluation
+    // 根据模式选择评估方式
+    if (useBackendApi.value && sessionId.value) {
+      // 使用后端 API 评估（真人面试模式）
+      try {
+        const result = await evaluateAnswerApi(
+          currentQuestion.value, 
+          answer,
+          currentQuestionData.value || undefined
+        )
+        message.evaluation = result.evaluation
+        
+        // 使用后端返回的追问建议
+        if (result.suggestions.length > 0) {
+          suggestedQuestions.value = result.suggestions
+          showSuggestions.value = true
+        } else {
+          // 后端没有返回建议，使用本地生成
+          startSuggestionTimer(currentQuestion.value, answer)
+        }
+      } catch (error) {
+        console.error('API评估失败:', error)
+        message.evaluation = evaluateAnswerLocal(answer)
+        startSuggestionTimer(currentQuestion.value, answer)
+      }
+    } else {
+      // 使用本地评估（AI模拟模式）
+      await new Promise(resolve => setTimeout(resolve, 500))
+      message.evaluation = evaluateAnswerLocal(answer)
+      startSuggestionTimer(currentQuestion.value, answer)
+    }
     
     // 更新统计
     const scores = messages.value
@@ -456,10 +666,8 @@ export function useInterviewAssist() {
       .map(m => m.evaluation!.score)
     stats.averageScore = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0
     
-    // 启动问题建议计时器
-    startSuggestionTimer(currentQuestion.value, answer)
-    
     currentAnswer.value = ''
+    currentQuestionData.value = null
     isProcessing.value = false
   }
 
@@ -509,6 +717,13 @@ export function useInterviewAssist() {
     updateConfig,
     candidatePresets,
     
+    // 会话状态（后端集成）
+    sessionId,
+    resumeDataId,
+    questionPool,
+    resumeHighlights,
+    useBackendApi,
+    
     // 状态
     isInterviewActive,
     isPaused,
@@ -528,16 +743,21 @@ export function useInterviewAssist() {
     stats,
     
     // 方法
+    createSession,
     startInterview,
+    startLiveInterviewWithResume,
     pauseInterview,
     resumeInterview,
     endInterview,
+    generateReport,
     askQuestion,
+    askFromPool,
     submitAnswer,
     useSuggestedQuestion,
     clearSuggestions,
     exportRecord,
     addMessage,
-    evaluateAnswer
+    evaluateAnswer,
+    fetchQuestionPool
   }
 }

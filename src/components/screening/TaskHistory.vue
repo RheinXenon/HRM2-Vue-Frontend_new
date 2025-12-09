@@ -45,7 +45,26 @@
               {{ getStatusText(task.status) }}
             </el-tag>
             <span v-if="task.status === 'running'">进度: {{ task.progress }}%</span>
+            <span v-if="task.status === 'running' && task.current_speaker" class="current-speaker">
+              当前处理: {{ task.current_speaker }}
+            </span>
+            <span v-if="task.status === 'running' && task.current_step !== undefined && task.total_steps" class="step-info">
+              步骤: {{ task.current_step }}/{{ task.total_steps }}
+            </span>
             <span class="history-time">{{ formatDate(task.created_at) }}</span>
+          </div>
+          <!-- 进度条 -->
+          <div v-if="task.status === 'running'" class="progress-container">
+            <el-progress :percentage="task.progress" :stroke-width="6" />
+          </div>
+          <!-- 简历内容预览（进行中任务） -->
+          <div v-if="task.status === 'running' && task.resume_data && task.resume_data.length > 0" class="resume-preview">
+            <div class="resume-name">
+              <i class="el-icon-user"></i> 候选人: {{ task.resume_data[0]?.candidate_name || '未知候选人' }}
+            </div>
+            <div class="resume-content-preview">
+              {{ getResumeContentPreview(task.resume_data[0]?.resume_content || '') }}
+            </div>
           </div>
           <!-- 评分显示 -->
           <div v-if="task.status === 'completed' && getHistoryTaskScore(task)" class="history-scores">
@@ -81,6 +100,22 @@
             加入组
           </el-button>
           <el-button
+            v-if="task.status === 'running'"
+            size="small"
+            type="warning"
+            @click.stop="$emit('pauseTask', task.task_id)"
+          >
+            暂停
+          </el-button>
+          <el-button
+            v-if="task.status === 'failed'"
+            size="small"
+            type="warning"
+            @click.stop="handleRetryTask(task)"
+          >
+            重新检测
+          </el-button>
+          <el-button
             size="small"
             type="danger"
             @click.stop="$emit('delete', task.task_id)"
@@ -112,6 +147,7 @@
 <script setup lang="ts">
 import { useScreeningUtils } from '@/composables/useScreeningUtils'
 import type { ResumeScreeningTask } from '@/types'
+import { ElMessage } from 'element-plus';
 
 const props = defineProps<{
   tasks: ResumeScreeningTask[]
@@ -128,6 +164,8 @@ const emit = defineEmits<{
   showDetail: [task: ResumeScreeningTask]
   downloadReport: [reportId: string]
   addToGroup: [task: ResumeScreeningTask]
+  pauseTask: [taskId: string]
+  retryTask: [data: { resume_content: string, candidate_name: string, position_title: string }]
   delete: [taskId: string]
   'update:currentPage': [page: number]
   'update:pageSize': [size: number]
@@ -146,7 +184,7 @@ const {
 const getTaskPosition = (task: ResumeScreeningTask): string => {
   // 优先从 resume_data 获取
   if (task.resume_data && task.resume_data.length > 0) {
-    const rd = task.resume_data[0] as any
+    const rd = task.resume_data[0]
     if (rd?.position_title) return rd.position_title
   }
   // 其次从 reports 获取
@@ -169,7 +207,7 @@ const statusFilters = [
 const getDownloadId = (task: ResumeScreeningTask): string | null => {
   // 优先使用 resume_data 的 id
   if (task.resume_data && task.resume_data.length > 0) {
-    const rd = task.resume_data[0] as any
+    const rd = task.resume_data[0]
     if (rd?.id) return rd.id
   }
   // 备选：使用 reports 的 report_id
@@ -177,6 +215,40 @@ const getDownloadId = (task: ResumeScreeningTask): string | null => {
     return task.reports[0]?.report_id || null
   }
   return null
+}
+
+// 获取简历内容预览
+const getResumeContentPreview = (content: string): string => {
+  if (!content) return ''
+  // 截取前100个字符作为预览
+  return content.length > 100 ? content.substring(0, 100) + '...' : content
+}
+
+// 处理重新检测任务
+const handleRetryTask = (task: ResumeScreeningTask) => {
+  if (!task.resume_data || task.resume_data.length === 0) {
+    // 如果没有简历数据，可以显示一个提示或使用详情信息
+    console.warn('没有可用于重新检测的简历数据');
+    ElMessage.warning('没有可用于重新检测的简历数据');
+    return
+  }
+  
+  const resumeData = task.resume_data[0]
+  const resume_content = resumeData?.resume_content
+  const candidate_name = resumeData?.candidate_name
+  const position_title = resumeData?.position_title
+  
+  if (!resume_content) {
+    console.warn('没有简历内容可用于重新检测')
+    return
+  }
+  
+  // 发送重新检测事件，包含必要的数据
+  emit('retryTask', {
+    resume_content,
+    candidate_name: candidate_name || '未知候选人',
+    position_title: position_title || '未知职位'
+  })
 }
 
 // 分页变化
@@ -262,6 +334,44 @@ const handlePageChange = () => {
     gap: 8px;
     font-size: 12px;
     color: #909399;
+    
+    .current-speaker {
+      color: #409eff;
+      font-weight: 500;
+    }
+    
+    .step-info {
+      color: #67c23a;
+    }
+  }
+  
+  .progress-container {
+    margin-top: 8px;
+    margin-bottom: 8px;
+  }
+  
+  .resume-preview {
+    margin-top: 8px;
+    padding: 8px;
+    background-color: #f9f9f9;
+    border-radius: 4px;
+    border-left: 3px solid #409eff;
+    
+    .resume-name {
+      font-size: 12px;
+      font-weight: 500;
+      color: #409eff;
+      margin-bottom: 4px;
+    }
+    
+    .resume-content-preview {
+      font-size: 12px;
+      color: #606266;
+      line-height: 1.4;
+      max-height: 60px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   }
 
   .history-scores {

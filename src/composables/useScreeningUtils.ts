@@ -116,15 +116,40 @@ export function useScreeningUtils() {
 
   // 获取历史任务名称
   const getHistoryTaskName = (task: ResumeScreeningTask): string => {
+    // 1. 优先从 resume_data 获取候选人名称（所有状态都尝试获取）
     if (task.resume_data && task.resume_data.length > 0) {
       const rd = task.resume_data[0] as any
       if (rd?.candidate_name) return rd.candidate_name
     }
+    
+    // 2. 尝试从 reports 获取文件名
     if (task.reports && task.reports.length > 0) {
       const filename = task.reports[0]?.report_filename
-      return filename?.replace(/\.[^/.]+$/, '') || '未知文件'
+      if (filename) {
+        return filename.replace(/\.[^/.]+$/, '')
+      }
+      // 尝试从 resume_content 中提取（如果有的话）
+      if (task.reports[0]?.resume_content) {
+        // 简单的提取逻辑，假设简历内容开头可能有姓名
+        const content = task.reports[0].resume_content
+        const lines = content.split('\n').slice(0, 5)
+        for (const line of lines) {
+          const trimmed = line.trim()
+          // 匹配可能的姓名模式（2-4个中文字符）
+          if (/^[\u4e00-\u9fa5]{2,4}$/.test(trimmed)) {
+            return trimmed
+          }
+        }
+      }
     }
-    return '未知文件'
+    
+    // 3. 对于失败的任务，显示错误信息的前20个字符
+    if (task.status === 'failed' && task.error_message) {
+      return `错误: ${task.error_message.substring(0, 20)}${task.error_message.length > 20 ? '...' : ''}`
+    }
+    
+    // 4. 对于没有候选人名称的情况，显示状态和任务ID
+    return `${getStatusText(task.status)}任务 ${task.task_id.substring(0, 8)}...`
   }
 
   // 获取历史任务评分

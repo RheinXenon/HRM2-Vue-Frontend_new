@@ -56,6 +56,7 @@
           @show-detail="showHistoryTaskDetail"
           @download-report="downloadReport"
           @add-to-group="showAddToGroupDialogFromHistory"
+          @retry-task="handleRetryTask"
           @delete="deleteHistoryTask"
           @page-change="loadHistoryTasks"
         />
@@ -119,8 +120,12 @@ import { useResumeUpload } from '@/composables/useResumeUpload'
 import { useResumeAssignment } from '@/composables/useResumeAssignment'
 import { useResumeDetail } from '@/composables/useResumeDetail'
 
+// API 导入
+import { screeningApi, positionApi } from '@/api'
+import { ElMessage } from 'element-plus'
+
 // 类型导入
-import type { PositionData } from '@/types'
+import type { PositionData, ProcessingTask } from '@/types'
 
 // ==================== Composables 初始化 ====================
 
@@ -198,6 +203,102 @@ const {
 } = useResumeAssignment(selectedPositionId, positionsList, loadPositionsList)
 
 // ==================== 事件处理 ====================
+
+// 处理重新检测任务
+const handleRetryTask = async (data: {
+  resume_content: string
+  candidate_name: string
+  position_title: string
+}) => {
+  try {
+    // 检查是否有选中的岗位，如果没有，使用失败任务中的职位信息
+    let positionForRetry = positionData.value
+    
+    // 如果当前没有选中岗位，或者当前岗位与失败任务的岗位不同
+    if (!positionForRetry.position || positionForRetry.position !== data.position_title) {
+      // 尝试从岗位列表中找到匹配的岗位
+      const matchingPosition = positionsList.value.find(p => p.position === data.position_title)
+      
+      if (matchingPosition) {
+        positionForRetry = matchingPosition
+      } else {
+        // 如果找不到匹配的岗位，使用当前选中的岗位（如果有）
+        if (positionData.value && positionData.value.position) {
+          console.warn(`使用当前岗位(${positionData.value.position})而不是失败任务的岗位(${data.position_title})`)
+          positionForRetry = positionData.value
+        } else {
+          // 获取默认岗位设置
+          try {
+            positionForRetry = await positionApi.getCriteria()
+            console.warn(`使用默认岗位设置而不是失败任务的岗位(${data.position_title})`)
+          } catch (err) {
+            console.error('获取默认岗位设置失败:', err)
+            // 如果所有方法都失败，创建一个最小可用的岗位对象
+            positionForRetry = {
+              id: 'retry-temp-position',
+              position: data.position_title || positionData.value.position || '未知职位',
+              department: '',
+              description: '',
+              required_skills: [],
+              optional_skills: [],
+              min_experience: 0,
+              education: [],
+              certifications: [],
+              is_active: true
+            }
+          }
+        }
+      }
+    }
+    
+    // 准备简历数据 - 确保数据格式与正常提交一致
+    const resumeData = {
+      name: data.candidate_name,
+      content: data.resume_content,
+      metadata: {
+        size: data.resume_content.length,
+        type: 'text/plain'
+      }
+    }
+    
+    // 构造提交数据，确保格式与正常提交完全一致
+    const submitData = {
+      position: positionForRetry,
+      resumes: [resumeData]
+    }
+    
+    // 调用API重新提交筛选任务
+    const newTask = await screeningApi.submitScreening(submitData)
+    
+    // 创建ProcessingTask对象，确保格式与正常提交一致
+    const processingTask: ProcessingTask = {
+      name: data.candidate_name,
+      task_id: newTask.task_id,
+      status: 'pending',
+      progress: 0,
+      created_at: new Date().toISOString(),
+      applied_position: positionForRetry.position,
+      error_message: undefined,
+      current_speaker: undefined,
+      report_id: undefined,
+      reports: undefined,
+      resume_data: undefined
+    }
+    
+    // 将新任务添加到处理队列
+    addToQueue(processingTask)
+    
+    // 显示成功消息
+    ElMessage.success(`已重新提交 ${data.candidate_name} 的简历进行筛选`)
+    
+    // 刷新历史任务列表
+    await loadHistoryTasks()
+    
+  } catch (error) {
+    console.error('重新检测任务失败:', error)
+    ElMessage.error(`重新检测失败: ${error instanceof Error ? error.message : '未知错误'}`)
+  }
+}
 
 // 显示添加对话框（从岗位列表触发）
 const showAssignDialog = (pos: PositionData) => {
